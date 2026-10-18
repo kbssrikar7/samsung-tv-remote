@@ -1,0 +1,234 @@
+package com.kbs.tvremote
+
+import androidx.core.content.edit
+import android.annotation.SuppressLint
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
+import android.util.Log
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONObject
+import java.io.IOException
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.security.MessageDigest
+import java.security.cert.CertificateException
+import java.security.cert.X509Certificate
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
+
+/**
+ * Samsung Tizen (2016+) local remote protocol.
+ *
+ *  keys/text/apps : wss://TV:8002/api/v2/channels/samsung.remote.control?name=<b64>&token=<t>
+ *  device info    : GET  http://TV:8001/api/v2/
+ *  app launch     : POST http://TV:8001/api/v2/applications/<appId>
+ *  power on       : Wake-on-LAN to the TV's MAC
+ *
+ * The first connection without a token makes the TV show an Allow prompt; the reply then carries
+ * a token bound to CLIENT_NAME, which must be reused for later connections.
+ */
+class TvClient(private val listener: Listener, private val pins: SharedPreferences) {
+
+    enum class State { DISCONNECTED, CONNECTING, WAITING_FOR_ALLOW, CONNECTED }
+
+    data class TvApp(val id: String, val name: String)
+
+    interface Listener {
+        fun onStateChanged(state: State, detail: String?)
+        fun onTokenIssued(token: String)
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+    private var socket: WebSocket? = null
+    @Volatile private var host: String? = null
+
+    var state = State.DISCONNECTED
+        private set
+
+    /**
+     * The TV serves a self-signed certificate on 8002, so CA validation can never pass. Instead the
+     * certificate is pinned on first use per TV address and any later mismatch is rejected.
+     */
+    @SuppressLint("CustomX509TrustManager")
+    private val pinning = object : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) =
+            throw CertificateException("Client certificates are not accepted")
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            val ip = host ?: throw CertificateException("No TV selected")
+            val leaf = chain.firstOrNull() ?: throw CertificateException("Empty certificate chain")
+            val fingerprint = MessageDigest.getInstance("SHA-256").digest(leaf.encoded)
+                .joinToString("") { "%02x".format(it) }
+            when (pins.getString(pinKey(ip), null)) {
+                null -> pins.edit { putString(pinKey(ip), fingerprint) }
+                fingerprint -> Unit
+                else -> throw CertificateException("TV certificate changed - use Forget pairing if this is your TV")
+            }
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
+    private val http: OkHttpClient = OkHttpClient.Builder()
+        .sslSocketFactory(
+            SSLContext.getInstance("TLS").apply { init(null, arrayOf(pinning), null) }.socketFactory,
+            pinning,
+        )
+        .hostnameVerifier { hostname, _ -> hostname == host }
+        .connectTimeout(5, TimeUnit.SECONDS)
+        // The Allow prompt stays up for ~30s; keep the socket open while the user decides.
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    fun connect(ip: String, token: String?) {
+        if (state != State.DISCONNECTED && host == ip) return
+        disconnect()
+        host = ip
+        setState(State.CONNECTING, null)
+        val name = Base64.encodeToString(CLIENT_NAME.toByteArray(), Base64.NO_WRAP)
+        var url = "wss://$ip:8002/api/v2/channels/samsung.remote.control?name=$name"
+        if (!token.isNullOrEmpty()) url += "&token=$token"
+        socket = http.newWebSocket(Request.Builder().url(url).build(), SocketListener())
+    }
+
+    fun disconnect() {
+        socket?.close(1000, null)
+        socket = null
+        if (state != State.DISCONNECTED) setState(State.DISCONNECTED, null)
+    }
+
+    fun sendKey(key: String) = send(
+        JSONObject()
+            .put("method", "ms.remote.control")
+            .put(
+                "params", JSONObject()
+                    .put("Cmd", "Click")
+                    .put("DataOfCmd", key)
+                    .put("Option", "false")
+                    .put("TypeOfRemote", "SendRemoteKey")
+            )
+    )
+
+    /** The WebSocket ed.apps.launch event is ignored by this firmware; the REST endpoint works. */
+    fun launchApp(app: TvApp) {
+        val ip = host ?: return
+        http.newCall(
+            Request.Builder()
+                .url("http://$ip:8001/api/v2/applications/${app.id}")
+                .post(ByteArray(0).toRequestBody())
+                .build()
+        ).enqueue(IgnoreResponse)
+    }
+
+    /** Reads the TV's name and Wi-Fi MAC (the MAC lets Wake-on-LAN work later while the TV is off). */
+    fun fetchInfo(ip: String, onInfo: (name: String, mac: String) -> Unit) {
+        http.newCall(Request.Builder().url("http://$ip:8001/api/v2/").build()).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    val device = runCatching { JSONObject(it.body!!.string()).getJSONObject("device") }.getOrNull()
+                        ?: return
+                    val name = device.optString("name")
+                    val mac = device.optString("wifiMac")
+                    main.post { onInfo(name, mac) }
+                }
+            }
+        })
+    }
+
+    fun wake(mac: String) {
+        Thread {
+            runCatching {
+                val macBytes = mac.split(":", "-").map { it.toInt(16).toByte() }.toByteArray()
+                val packet = ByteArray(6) { 0xFF.toByte() } + (1..16).flatMap { macBytes.asList() }
+                DatagramSocket().use { s ->
+                    s.broadcast = true
+                    val target = InetAddress.getByName("255.255.255.255")
+                    repeat(3) { s.send(DatagramPacket(packet, packet.size, target, 9)) }
+                }
+            }
+        }.start()
+    }
+
+    private fun send(json: JSONObject): Boolean {
+        val ws = socket ?: return false
+        return ws.send(json.toString())
+    }
+
+    private fun setState(newState: State, detail: String?) {
+        state = newState
+        main.post { listener.onStateChanged(newState, detail) }
+    }
+
+    private inner class SocketListener : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            // With a valid token the connect event arrives immediately; otherwise the TV is
+            // showing the Allow prompt.
+            if (socket === webSocket && state == State.CONNECTING) setState(State.WAITING_FOR_ALLOW, null)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (socket !== webSocket) return
+            val msg = runCatching { JSONObject(text) }.getOrNull() ?: return
+            when (msg.optString("event")) {
+                "ms.channel.connect" -> {
+                    msg.optJSONObject("data")?.optString("token")?.takeIf { it.isNotEmpty() }?.let {
+                        main.post { listener.onTokenIssued(it) }
+                    }
+                    setState(State.CONNECTED, null)
+                }
+                "ms.channel.unauthorized" -> {
+                    setState(State.DISCONNECTED, DENIED)
+                    webSocket.close(1000, null)
+                }
+                "ms.channel.timeOut" -> {
+                    setState(State.DISCONNECTED, "Allow prompt timed out")
+                    webSocket.close(1000, null)
+                }
+                // Logged so new firmware behaviour can be investigated; never contains the token.
+                else -> Log.d(TAG, "event: $text")
+            }
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (socket === webSocket) {
+                socket = null
+                if (state != State.DISCONNECTED) setState(State.DISCONNECTED, null)
+            }
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (socket === webSocket) {
+                socket = null
+                Log.d(TAG, "socket failure", t)
+                setState(State.DISCONNECTED, t.message ?: "Connection failed")
+            }
+        }
+    }
+
+    private object IgnoreResponse : Callback {
+        override fun onFailure(call: Call, e: IOException) {}
+        override fun onResponse(call: Call, response: Response) = response.close()
+    }
+
+    companion object {
+        /** The pairing token is bound to this name; changing it triggers a new Allow prompt. */
+        const val CLIENT_NAME = "PhoneRemote"
+
+        const val DENIED = "denied"
+
+        fun pinKey(ip: String) = "cert_$ip"
+        private const val TAG = "TvRemote"
+    }
+}

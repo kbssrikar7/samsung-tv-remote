@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The TV's REST API (port 8001) is plain HTTP on the LAN. Domain configs cannot match
+     arbitrary IPs, so cleartext is allowed app-wide; the app only ever talks to the TV. -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- OkHttp 5.x and androidx.core 1.19+ require compileSdk 37, which AGP 8.13 does not
+         support yet. Revisit when upgrading the Android Gradle plugin. -->
+    <issue id="NewerVersionAvailable">
+        <ignore regexp="okhttp" />
+    </issue>
+    <issue id="GradleDependency">
+        <ignore regexp="androidx.core:core-ktx" />
+    </issue>
+</lint>
