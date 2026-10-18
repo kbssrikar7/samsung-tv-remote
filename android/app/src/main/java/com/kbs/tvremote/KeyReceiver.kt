@@ -20,35 +20,34 @@ class KeyReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                sendOnce(context.applicationContext, key)
+                sendKeyOnce(context.applicationContext, key)
             } finally {
                 pending.finish()
             }
         }.start()
     }
 
-    /** Blocking: connects with the stored pairing, sends [key], disconnects. */
-    private fun sendOnce(context: Context, key: String) {
-        val prefs = TvPrefs.of(context)
-        val ip = prefs.getString(TvPrefs.IP, null) ?: return
-        val connected = CountDownLatch(1)
-        val client = TvClient(object : TvClient.Listener {
-            override fun onStateChanged(state: TvClient.State, detail: String?) {
-                if (state == TvClient.State.CONNECTED || state == TvClient.State.DISCONNECTED) connected.countDown()
-            }
-
-            override fun onTokenIssued(token: String) = prefs.edit { putString(TvPrefs.token(ip), token) }
-        }, prefs)
-        client.connect(ip, prefs.getString(TvPrefs.token(ip), null))
-        connected.await(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
-        if (client.state == TvClient.State.CONNECTED) {
-            client.sendKey(key)
-            Thread.sleep(SEND_GRACE_MS) // let the frame leave before closing the socket
-        }
-        client.disconnect()
-    }
-
     companion object {
+        /** Blocking: connects with the stored pairing, sends [key], disconnects. */
+        fun sendKeyOnce(context: Context, key: String): Boolean {
+            val prefs = TvPrefs.of(context)
+            val ip = prefs.getString(TvPrefs.IP, null) ?: return false
+            val connected = CountDownLatch(1)
+            val client = TvClient(object : TvClient.Listener {
+                override fun onStateChanged(state: TvClient.State, detail: String?) {
+                    if (state == TvClient.State.CONNECTED || state == TvClient.State.DISCONNECTED) connected.countDown()
+                }
+
+                override fun onTokenIssued(token: String) = prefs.edit { putString(TvPrefs.token(ip), token) }
+            }, prefs)
+            client.connect(ip, prefs.getString(TvPrefs.token(ip), null))
+            connected.await(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
+            val sent = client.state == TvClient.State.CONNECTED && client.sendKey(key)
+            if (sent) Thread.sleep(SEND_GRACE_MS) // let the frame leave before closing the socket
+            client.disconnect()
+            return sent
+        }
+
         private const val EXTRA_KEY = "key"
         private const val CONNECT_TIMEOUT_S = 5L
         private const val SEND_GRACE_MS = 200L

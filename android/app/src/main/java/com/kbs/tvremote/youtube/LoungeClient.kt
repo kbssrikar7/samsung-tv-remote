@@ -33,7 +33,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
     @Volatile private var gsessionId: String? = null
     @Volatile private var lastEventId = 0
     private var requestId = 0
-    private var screenPresent = false
 
     /** Long-poll requests stay open for minutes, so they can't share the app's call timeout. */
     private val longPoll = http.newBuilder()
@@ -68,19 +67,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         prefs.edit { remove(KEY_SCREEN_ID) }
         loungeToken = null
         dropSession()
-    }
-
-    /**
-     * True when the TV's YouTube app has joined the lounge session. Checked through a fresh bind,
-     * whose device list includes the TV ("LOUNGE_SCREEN") only while YouTube is really open; the
-     * pairing API's "online" status stays true long after the app has closed.
-     */
-    @Synchronized
-    @Throws(IOException::class)
-    fun isScreenConnected(): Boolean {
-        dropSession()
-        connect()
-        return screenPresent
     }
 
     @Throws(IOException::class)
@@ -265,7 +251,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
             gsessionId = Regex("""\["S","([^"]+)"""").find(text)?.groupValues?.get(1)
             lastEventId = Regex("""\[(\d+),\[""").findAll(text).maxOfOrNull { it.groupValues[1].toInt() } ?: 0
             requestId = 1
-            screenPresent = text.contains("LOUNGE_SCREEN")
             if (sid == null || gsessionId == null) throw IOException("YouTube on the TV refused the connection")
         }
     }

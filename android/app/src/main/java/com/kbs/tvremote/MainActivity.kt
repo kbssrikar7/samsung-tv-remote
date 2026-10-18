@@ -30,10 +30,13 @@ import com.kbs.tvremote.youtube.Library
 import com.kbs.tvremote.youtube.LoungeClient
 import com.kbs.tvremote.youtube.Video
 import com.kbs.tvremote.youtube.YouTubeSearch
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -50,6 +53,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     private val lounge by lazy { LoungeClient(web, prefs) }
     private val library by lazy { Library(prefs) }
     private var watchJob: Job? = null
+    /** Video sent after a cold start, completed once the TV reports playing it. */
+    private var awaitedVideo: Pair<String, CompletableDeferred<Unit>>? = null
     private val volumeRefresh = Runnable {
         lifecycleScope.launch {
             val volume = withContext(Dispatchers.IO) { client.volume() } ?: return@launch
@@ -224,6 +229,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     }
 
     private fun onPlayback(playback: LoungeClient.Playback?) {
+        awaitedVideo?.let { (id, confirmed) -> if (playback?.videoId == id) confirmed.complete(Unit) }
         if (playback == null || playback.state == LoungeClient.State.STOPPED) {
             uiState = uiState.copy(nowPlaying = null)
             return
@@ -318,9 +324,9 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
 
     /**
      * Blocking. Makes sure TizenTube is in front on the TV and returns true if it had to be started.
-     * A freshly started TizenBrew stops on its module list (its autolaunch setting has no effect on
-     * this firmware), so the app presses OK to enter TizenTube, the focused module. OK is only ever
-     * pressed right after the app started TizenBrew itself, so it can't disturb something playing.
+     * A freshly started TizenBrew stops on its module list unless its autolaunch is set, so the app
+     * presses Down and OK to enter TizenTube. Keys are only ever sent right after the app started
+     * TizenBrew itself, so they can't disturb something playing.
      */
     private fun ensureYouTubeOpen(): Boolean {
         val app = APPS.getValue(TvApp.YOUTUBE)
@@ -331,8 +337,20 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         }
         client.launchApp(app)
         waitUntilInFront(app)
-        client.sendKey("KEY_ENTER") // open TizenTube from the module list
+        // TizenBrew starts with its top bar highlighted, so OK alone does nothing: move down onto
+        // TizenTube (the first module) and open it.
+        pressKey("KEY_DOWN")
+        Thread.sleep(800)
+        pressKey("KEY_ENTER")
         return true
+    }
+
+    /**
+     * Blocking. Sends [key] on the app's connection, or on a one-off connection if the app's has
+     * closed (it does when the app leaves the screen during a long wait).
+     */
+    private fun pressKey(key: String) {
+        if (!client.sendKey(key)) KeyReceiver.sendKeyOnce(applicationContext, key)
     }
 
     /** Blocking. TizenBrew restarts itself once while starting; waits until it has stayed in front. */
@@ -347,16 +365,6 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         Thread.sleep(1500) // let the module list render
     }
 
-    /** Blocking. Waits until a freshly started TizenTube has joined the YouTube lounge. */
-    private fun waitForYouTubeReady() {
-        Thread.sleep(3000)
-        val deadline = System.currentTimeMillis() + 20_000
-        while (!lounge.isScreenConnected()) {
-            if (System.currentTimeMillis() > deadline) throw IOException("YouTube on the TV didn't get ready")
-            Thread.sleep(1500)
-        }
-    }
-
     private fun openYouTube() {
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { ensureYouTubeOpen() }.onFailure { e ->
@@ -368,11 +376,28 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     /** Plays [video] in the TV's YouTube (TizenTube), opening it first when needed. */
     private fun playOnTv(video: Video) {
         updateYouTube { copy(sendingId = video.id, error = null) }
+        startWatching()
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (ensureYouTubeOpen()) waitForYouTubeReady()
-                    lounge.playVideo(video.id)
+            val result = runCatching {
+                val coldStart = withContext(Dispatchers.IO) { ensureYouTubeOpen() }
+                if (!coldStart) {
+                    withContext(Dispatchers.IO) { lounge.playVideo(video.id) }
+                    return@runCatching
+                }
+                // A just-started TizenTube may not be listening yet, and a video sent too early is
+                // silently dropped. Resend until the TV reports it playing.
+                delay(TIZENTUBE_LOAD_MS)
+                val confirmed = CompletableDeferred<Unit>()
+                awaitedVideo = video.id to confirmed
+                try {
+                    val deadline = System.currentTimeMillis() + PLAY_CONFIRM_TIMEOUT_MS
+                    while (true) {
+                        withContext(Dispatchers.IO) { lounge.playVideo(video.id) }
+                        if (withTimeoutOrNull(PLAY_RESEND_MS) { confirmed.await() } != null) break
+                        if (System.currentTimeMillis() > deadline) throw IOException("YouTube on the TV didn't start the video")
+                    }
+                } finally {
+                    awaitedVideo = null
                 }
             }
             updateYouTube {
@@ -437,6 +462,9 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         private fun nameKey(ip: String) = TvPrefs.name(ip)
 
         private const val RECONNECT_DELAY_MS = 3000L
+        private const val TIZENTUBE_LOAD_MS = 3000L
+        private const val PLAY_RESEND_MS = 4000L
+        private const val PLAY_CONFIRM_TIMEOUT_MS = 25_000L
         private const val MAX_RECONNECT_DELAY_MS = 60_000L
         private const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
         private val VOLUME_KEYS = setOf("KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE")
