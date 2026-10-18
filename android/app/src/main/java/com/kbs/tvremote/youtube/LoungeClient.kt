@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
+import java.util.UUID
 
 /**
  * Plays videos on the TV's YouTube app through YouTube's "lounge" API - the same channel the
@@ -24,6 +25,13 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
     private var gsessionId: String? = null
     private var lastEventId = 0
     private var requestId = 0
+    private var screenPresent = false
+
+    private val deviceId: String by lazy {
+        prefs.getString(KEY_DEVICE_ID, null) ?: UUID.randomUUID().toString().also {
+            prefs.edit { putString(KEY_DEVICE_ID, it) }
+        }
+    }
 
     val isLinked: Boolean get() = prefs.getString(KEY_SCREEN_ID, null) != null
 
@@ -46,16 +54,17 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         dropSession()
     }
 
-    /** True when the TV's YouTube app is open and reachable through the lounge. */
+    /**
+     * True when the TV's YouTube app has joined the lounge session. Checked through a fresh bind,
+     * whose device list includes the TV ("LOUNGE_SCREEN") only while YouTube is really open; the
+     * pairing API's "online" status stays true long after the app has closed.
+     */
+    @Synchronized
     @Throws(IOException::class)
-    fun isScreenOnline(): Boolean {
-        val token = ensureToken()
-        val json = postForm(
-            "$BASE/pairing/get_screen_availability",
-            FormBody.Builder().add("lounge_token", token).build(),
-        ) ?: return false
-        val screens = json.optJSONArray("screens") ?: return false
-        return screens.length() > 0 && screens.getJSONObject(0).optString("status") == "online"
+    fun isScreenConnected(): Boolean {
+        dropSession()
+        connect()
+        return screenPresent
     }
 
     @Throws(IOException::class)
@@ -97,8 +106,9 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
             .add("app", "web")
             .add("mdx-version", "3")
             .add("name", DEVICE_NAME)
-            // pyytlounge sends the screen id here; verified working against TizenTube.
-            .add("id", prefs.getString(KEY_SCREEN_ID, null)!!)
+            // This remote's own id. Reusing the screen id (as pyytlounge does) makes the session
+            // look like the TV itself and can push the real TV out of it.
+            .add("id", deviceId)
             .add("device", "REMOTE_CONTROL")
             .add("capabilities", "que,dsdtr,atp,vsp")
             .add("magnaKey", "cloudPairedDevice")
@@ -119,6 +129,7 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
             gsessionId = Regex("""\["S","([^"]+)"""").find(text)?.groupValues?.get(1)
             lastEventId = Regex("""\[(\d+),\[""").findAll(text).maxOfOrNull { it.groupValues[1].toInt() } ?: 0
             requestId = 1
+            screenPresent = text.contains("LOUNGE_SCREEN")
             if (sid == null || gsessionId == null) throw IOException("YouTube on the TV refused the connection")
         }
     }
@@ -162,5 +173,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         const val BASE = "https://www.youtube.com/api/lounge"
         const val DEVICE_NAME = "TV Remote"
         const val KEY_SCREEN_ID = "yt_screen_id"
+        const val KEY_DEVICE_ID = "yt_device_id"
     }
 }

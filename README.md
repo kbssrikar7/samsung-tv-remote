@@ -19,7 +19,8 @@ parents who just want to watch something) can use it without hunting through men
   Exit, Channel, Rewind and Forward in a "More" sheet. Arrows, volume and channel repeat while held.
 - **Phone volume buttons** control the TV volume while the app is open.
 - **Finds the TV automatically** on Wi-Fi (no IP address needed), with manual entry as a fallback.
-- **Power**: off over the network, on via Wake-on-LAN.
+- **Power** off over the network. Power on uses Wake-on-LAN (needs *Power On with Mobile* on the
+  TV; not yet verified over Wi-Fi standby).
 - **App shortcuts** for YouTube (TizenBrew) and Hotstar.
 - Large labelled buttons, dark calm design, no vibration.
 
@@ -40,7 +41,12 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 1. Phone and TV on the same Wi-Fi. Open the app; it finds the TV by itself.
 2. The TV asks to **Allow** the new remote - accept with the normal remote (one time).
 3. For YouTube search: tap **Search YouTube**, then on the TV open YouTube →
-   **Settings → Link with TV code** and type the 12 numbers into the app (one time).
+   **Settings → Link with TV code** and type the 12 numbers into the app. This is done once per
+   phone (for example by whoever sets the phone up); the link is kept from then on.
+
+If YouTube isn't open on the TV when a video is picked, the app starts TizenBrew, enters
+TizenTube from its module list and then plays the video. (TizenBrew's own autolaunch setting
+had no effect on the test TV.)
 
 ## How it works
 
@@ -63,7 +69,7 @@ sending the chosen video avoids the grid entirely.
 
 ## Laptop remote (for testing)
 
-`tvremote.py` is a small Python client for the same protocol:
+`tvremote.py` is a small Python client for the same protocol (early prototype, lightly tested):
 
 ```bash
 pip install websocket-client

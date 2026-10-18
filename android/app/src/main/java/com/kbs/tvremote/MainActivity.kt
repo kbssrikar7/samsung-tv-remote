@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             if (client.state == TvClient.State.DISCONNECTED) connect()
             client.sendKey(key)
         },
-        launch = { app -> client.launchApp(APPS.getValue(app)) },
+        launch = { app -> if (app == TvApp.YOUTUBE) openYouTube() else client.launchApp(APPS.getValue(app)) },
         power = { power() },
         retry = {
             client.disconnect()
@@ -193,24 +193,61 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     }
 
     /**
-     * Plays [video] in the TV's YouTube (TizenTube). If YouTube isn't open on the TV, opens it first
-     * and waits for it to come online in the lounge before sending the video.
+     * Blocking. Makes sure TizenTube is in front on the TV and returns true if it had to be started.
+     * A freshly started TizenBrew stops on its module list (its autolaunch setting has no effect on
+     * this firmware), so the app presses OK to enter TizenTube, the focused module. OK is only ever
+     * pressed right after the app started TizenBrew itself, so it can't disturb something playing.
      */
+    private fun ensureYouTubeOpen(): Boolean {
+        val app = APPS.getValue(TvApp.YOUTUBE)
+        val before = client.appStatus(app) ?: throw IOException("Can't reach the TV. Is it on?")
+        if (before.running) {
+            if (!before.visible) client.launchApp(app) // resumes straight into TizenTube
+            return false
+        }
+        client.launchApp(app)
+        waitUntilInFront(app)
+        client.sendKey("KEY_ENTER") // open TizenTube from the module list
+        return true
+    }
+
+    /** Blocking. TizenBrew restarts itself once while starting; waits until it has stayed in front. */
+    private fun waitUntilInFront(app: TvClient.TvApp) {
+        val deadline = System.currentTimeMillis() + 20_000
+        var steady = 0
+        while (steady < 2) {
+            if (System.currentTimeMillis() > deadline) throw IOException("YouTube didn't open on the TV")
+            Thread.sleep(1000)
+            steady = if (client.appStatus(app)?.visible == true) steady + 1 else 0
+        }
+        Thread.sleep(1500) // let the module list render
+    }
+
+    /** Blocking. Waits until a freshly started TizenTube has joined the YouTube lounge. */
+    private fun waitForYouTubeReady() {
+        Thread.sleep(3000)
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!lounge.isScreenConnected()) {
+            if (System.currentTimeMillis() > deadline) throw IOException("YouTube on the TV didn't get ready")
+            Thread.sleep(1500)
+        }
+    }
+
+    private fun openYouTube() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { ensureYouTubeOpen() }.onFailure { e ->
+                withContext(Dispatchers.Main) { toast(e.message ?: "Couldn't open YouTube") }
+            }
+        }
+    }
+
+    /** Plays [video] in the TV's YouTube (TizenTube), opening it first when needed. */
     private fun playOnTv(video: Video) {
         updateYouTube { copy(sendingId = video.id, error = null) }
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    if (!lounge.isScreenOnline()) {
-                        client.launchApp(APPS.getValue(TvApp.YOUTUBE))
-                        var online = false
-                        for (i in 0 until 16) {
-                            Thread.sleep(1500)
-                            if (lounge.isScreenOnline()) { online = true; break }
-                        }
-                        // Give the app a moment to finish loading before handing it a video.
-                        if (online) Thread.sleep(1500)
-                    }
+                    if (ensureYouTubeOpen()) waitForYouTubeReady()
                     lounge.playVideo(video.id)
                 }
             }

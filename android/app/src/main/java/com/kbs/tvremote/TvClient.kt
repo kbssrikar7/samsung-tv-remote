@@ -131,6 +131,19 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
         ).enqueue(IgnoreResponse)
     }
 
+    data class AppStatus(val running: Boolean, val visible: Boolean)
+
+    /** Blocking; whether [app] is running and in front on the TV, or null if the TV can't be reached. */
+    fun appStatus(app: TvApp): AppStatus? {
+        val ip = host ?: return null
+        return runCatching {
+            http.newCall(Request.Builder().url("http://$ip:8001/api/v2/applications/${app.id}").build()).execute().use {
+                val json = JSONObject(it.body!!.string())
+                AppStatus(json.optBoolean("running"), json.optBoolean("visible"))
+            }
+        }.getOrNull()
+    }
+
     /** Reads the TV's name and Wi-Fi MAC (the MAC lets Wake-on-LAN work later while the TV is off). */
     fun fetchInfo(ip: String, onInfo: (name: String, mac: String) -> Unit) {
         http.newCall(Request.Builder().url("http://$ip:8001/api/v2/").build()).enqueue(object : Callback {
