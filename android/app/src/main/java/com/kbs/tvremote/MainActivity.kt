@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +13,7 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -161,7 +163,12 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // The app is always dark, so ask for light system-bar icons on every Android version
+        // (older ones otherwise draw dark icons and a light navigation bar).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         installedApps = ip?.let { TvApps.load(prefs, it) }.orEmpty()
         uiState = uiState.copy(
@@ -320,6 +327,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             startActivity(app)
         } catch (_: ActivityNotFoundException) {
             val web = Intent(Intent.ACTION_VIEW, ("https://www.youtube.com/results?search_query=" + Uri.encode(query)).toUri())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { startActivity(web) }.onFailure { toast("YouTube isn't available on this phone") }
         }
     }

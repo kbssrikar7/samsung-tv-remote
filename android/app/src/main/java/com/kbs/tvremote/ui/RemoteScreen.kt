@@ -182,9 +182,8 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
 
     val openSearch = { voice: Boolean -> startWithVoice = voice; showSearch = true }
-    val top: @Composable () -> Unit = {
-        Header(state, actions, onMore = { showMore = true })
-        Spacer(Modifier.height(18.dp))
+    val header: @Composable () -> Unit = { Header(state, actions, onMore = { showMore = true }) }
+    val searchAndApps: @Composable () -> Unit = {
         SearchBar(onOpen = { openSearch(false) }, onVoice = { openSearch(true) })
         state.nowPlaying?.let {
             Spacer(Modifier.height(12.dp))
@@ -194,6 +193,11 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             Spacer(Modifier.height(12.dp))
             AppRow(state.apps, actions.launch)
         }
+    }
+    val top: @Composable () -> Unit = {
+        header()
+        Spacer(Modifier.height(18.dp))
+        searchAndApps()
     }
     val bottom: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -221,30 +225,34 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             val screenHeight = maxHeight
             val landscape = screenWidth > screenHeight
             when {
-                // Landscape (phones turned sideways, tablets): controls left, d-pad right.
-                landscape -> Row(
+                // Landscape (phones turned sideways, tablets): header across the top, controls
+                // on the left, d-pad on the right.
+                landscape -> Column(
                     Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
                 ) {
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        top()
-                        Spacer(Modifier.height(20.dp))
-                        bottom()
-                    }
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        DPad(size = min(screenHeight - 24.dp, 320.dp), onKey = actions.key)
+                    header()
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            searchAndApps()
+                            Spacer(Modifier.height(20.dp))
+                            bottom()
+                        }
+                        BoxWithConstraints(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            DPad(size = min(min(maxWidth, maxHeight) - 8.dp, 320.dp), onKey = actions.key)
+                        }
                     }
                 }
                 // Tall screens: everything fits, the d-pad takes the leftover space.

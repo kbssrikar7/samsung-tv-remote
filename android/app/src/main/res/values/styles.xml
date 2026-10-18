@@ -13,4 +13,9 @@
         <item name="android:background">@drawable/widget_button</item>
         <item name="android:scaleType">center</item>
     </style>
+
+    <style name="NotificationButton" parent="WidgetButton">
+        <item name="android:background">@drawable/notification_button</item>
+        <item name="android:tint">@color/notification_icon</item>
+    </style>
 </resources>

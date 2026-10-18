@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg">#0E1116</color>
+    <!-- Notification remote follows the system's light/dark notification background. -->
+    <color name="notification_icon">#1F1F23</color>
+    <color name="notification_button">#14000000</color>
 </resources>
