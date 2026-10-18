@@ -1,6 +1,5 @@
 package com.kbs.tvremote
 
-import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
+import com.kbs.tvremote.ui.NowPlaying
+import com.kbs.tvremote.ui.NowPlayingActions
 import com.kbs.tvremote.ui.RemoteActions
 import com.kbs.tvremote.ui.RemoteScreen
 import com.kbs.tvremote.ui.RemoteState
@@ -22,6 +23,7 @@ import com.kbs.tvremote.ui.Status
 import com.kbs.tvremote.ui.TvApp
 import com.kbs.tvremote.ui.YouTubeActions
 import com.kbs.tvremote.ui.YouTubeState
+import com.kbs.tvremote.youtube.Library
 import com.kbs.tvremote.youtube.LoungeClient
 import com.kbs.tvremote.youtube.Video
 import com.kbs.tvremote.youtube.YouTubeSearch
@@ -36,13 +38,21 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity(), TvClient.Listener {
 
     private val main = Handler(Looper.getMainLooper())
-    private val prefs by lazy { getSharedPreferences("tv", Context.MODE_PRIVATE) }
+    private val prefs by lazy { TvPrefs.of(this) }
     private val client by lazy { TvClient(this, prefs) }
 
     // Internet traffic (YouTube) uses normal certificate validation, unlike the TV connection.
     private val web by lazy { OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build() }
     private val youtubeSearch by lazy { YouTubeSearch(web) }
     private val lounge by lazy { LoungeClient(web, prefs) }
+    private val library by lazy { Library(prefs) }
+    private var watchJob: Job? = null
+    private val volumeRefresh = Runnable {
+        lifecycleScope.launch {
+            val volume = withContext(Dispatchers.IO) { client.volume() } ?: return@launch
+            uiState = uiState.copy(volume = volume)
+        }
+    }
 
     private var resumed = false
     private val reconnect = Runnable { connect() }
@@ -61,7 +71,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
 
     private val youtubeActions = YouTubeActions(
         search = { query ->
-            updateYouTube { copy(searching = true, searchedFor = query, error = null) }
+            updateYouTube { copy(searching = true, searchedFor = query, error = null, recentSearches = library.addRecentSearch(query)) }
             lifecycleScope.launch {
                 val result = withContext(Dispatchers.IO) { runCatching { youtubeSearch.search(query) } }
                 updateYouTube {
@@ -73,7 +83,11 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
                 }
             }
         },
+        clear = { updateYouTube { copy(searchedFor = null, results = emptyList(), error = null) } },
         play = { video -> playOnTv(video) },
+        playNext = { video -> queue(video, "Will play next") { lounge.playNext(it) } },
+        addToQueue = { video -> queue(video, "Added to the queue") { lounge.addToQueue(it) } },
+        toggleFavourite = { video -> updateYouTube { copy(favourites = library.toggleFavourite(video)) } },
         link = { code ->
             updateYouTube { copy(linking = true, error = null) }
             lifecycleScope.launch {
@@ -85,19 +99,19 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
                         error = result.exceptionOrNull()?.let { it.message ?: "Couldn't connect to YouTube" },
                     )
                 }
+                if (lounge.isLinked) startWatching()
             }
         },
         unlink = {
+            stopWatching()
             lounge.unlink()
-            updateYouTube { YouTubeState(linked = false) }
+            updateYouTube { YouTubeState(linked = false, favourites = favourites, recentSearches = recentSearches) }
+            uiState = uiState.copy(nowPlaying = null)
         },
     )
 
     private val actions = RemoteActions(
-        key = { key ->
-            if (client.state == TvClient.State.DISCONNECTED) connect()
-            client.sendKey(key)
-        },
+        key = { key -> sendKey(key) },
         launch = { app -> if (app == TvApp.YOUTUBE) openYouTube() else client.launchApp(APPS.getValue(app)) },
         power = { power() },
         retry = {
@@ -106,6 +120,10 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         },
         youtube = youtubeActions,
         findTv = { findTv() },
+        nowPlaying = NowPlayingActions(
+            togglePlay = { togglePlay() },
+            seekTo = { seconds -> inBackground { lounge.seekTo(seconds) } },
+        ),
         chooseTv = { tv -> useTv(tv.ip, tv.name) },
         saveIp = { newIp -> useTv(newIp, null) },
         forgetPairing = {
@@ -121,7 +139,11 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         uiState = uiState.copy(
             tvName = ip?.let { prefs.getString(nameKey(it), null) } ?: uiState.tvName,
             ip = ip,
-            youtube = YouTubeState(linked = lounge.isLinked),
+            youtube = YouTubeState(
+                linked = lounge.isLinked,
+                favourites = library.favourites(),
+                recentSearches = library.recentSearches(),
+            ),
         )
         setContent {
             RemoteTheme { RemoteScreen(uiState, actions) }
@@ -132,6 +154,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         super.onResume()
         resumed = true
         if (ip == null) findTv() else connect()
+        if (lounge.isLinked) startWatching()
     }
 
     override fun onPause() {
@@ -139,6 +162,75 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         resumed = false
         main.removeCallbacks(reconnect)
         client.disconnect()
+        stopWatching()
+    }
+
+    private fun sendKey(key: String) {
+        if (client.state == TvClient.State.DISCONNECTED) connect()
+        client.sendKey(key)
+        if (key in VOLUME_KEYS) refreshVolume()
+    }
+
+    /** Reads the TV's volume shortly after the last volume key, so repeated presses coalesce. */
+    private fun refreshVolume(delayMs: Long = 400) {
+        main.removeCallbacks(volumeRefresh)
+        main.postDelayed(volumeRefresh, delayMs)
+    }
+
+    /** Follows what the TV's YouTube is playing while the app is in front. */
+    private fun startWatching() {
+        if (watchJob?.isActive == true) return
+        watchJob = lifecycleScope.launch(Dispatchers.IO) {
+            lounge.watch { playback -> main.post { onPlayback(playback) } }
+        }
+    }
+
+    private fun stopWatching() {
+        lounge.stopWatching()
+        watchJob?.cancel()
+        watchJob = null
+    }
+
+    private fun onPlayback(playback: LoungeClient.Playback?) {
+        if (playback == null || playback.state == LoungeClient.State.STOPPED) {
+            uiState = uiState.copy(nowPlaying = null)
+            return
+        }
+        val previous = uiState.nowPlaying
+        val known = previous?.video?.takeIf { it.id == playback.videoId }
+            ?: (uiState.youtube.results + uiState.youtube.favourites).firstOrNull { it.id == playback.videoId }
+        uiState = uiState.copy(nowPlaying = NowPlaying(known, playback, System.currentTimeMillis()))
+        if (known == null) {
+            lifecycleScope.launch {
+                val details = withContext(Dispatchers.IO) { youtubeSearch.details(playback.videoId) } ?: return@launch
+                val current = uiState.nowPlaying ?: return@launch
+                if (current.playback.videoId == details.id) uiState = uiState.copy(nowPlaying = current.copy(video = details))
+            }
+        }
+    }
+
+    private fun togglePlay() {
+        val current = uiState.nowPlaying ?: return
+        val playing = current.playback.state == LoungeClient.State.PLAYING
+        // Show the change at once; the TV's own report follows and corrects it if needed.
+        val state = if (playing) LoungeClient.State.PAUSED else LoungeClient.State.PLAYING
+        uiState = uiState.copy(nowPlaying = current.copy(playback = current.playback.copy(state = state)))
+        inBackground { if (playing) lounge.pause() else lounge.play() }
+    }
+
+    private fun queue(video: Video, done: String, send: (String) -> Unit) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { send(video.id) } }
+            toast(if (result.isSuccess) done else result.exceptionOrNull()?.message ?: "Couldn't reach YouTube on the TV")
+        }
+    }
+
+    private fun inBackground(block: () -> Unit) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching(block).onFailure { e ->
+                withContext(Dispatchers.Main) { toast(e.message ?: "Couldn't reach YouTube on the TV") }
+            }
+        }
     }
 
     private fun connect() {
@@ -188,7 +280,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             else -> return super.onKeyDown(keyCode, event)
         }
         if (client.state != TvClient.State.CONNECTED) return super.onKeyDown(keyCode, event)
-        client.sendKey(key)
+        sendKey(key)
         return true
     }
 
@@ -288,6 +380,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             TvClient.State.DISCONNECTED -> if (denied) Status.DENIED else Status.OFFLINE
         }
         uiState = uiState.copy(status = status)
+        if (state == TvClient.State.CONNECTED) refreshVolume(delayMs = 0)
         // Retrying after a denial would just pop the prompt up again; wait for a tap instead.
         if (state == TvClient.State.DISCONNECTED && resumed && !denied) {
             main.removeCallbacks(reconnect)
@@ -302,12 +395,13 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     companion object {
-        private const val PREF_IP = "ip"
-        private fun tokenKey(ip: String) = "token_$ip"
-        private fun macKey(ip: String) = "mac_$ip"
-        private fun nameKey(ip: String) = "name_$ip"
+        private const val PREF_IP = TvPrefs.IP
+        private fun tokenKey(ip: String) = TvPrefs.token(ip)
+        private fun macKey(ip: String) = TvPrefs.mac(ip)
+        private fun nameKey(ip: String) = TvPrefs.name(ip)
 
         private const val RECONNECT_DELAY_MS = 3000L
+        private val VOLUME_KEYS = setOf("KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE")
 
         // "YouTube" opens TizenBrew (which runs the ad-free TizenTube) instead of the stock app.
         // Both IDs are fixed per app, not per TV.

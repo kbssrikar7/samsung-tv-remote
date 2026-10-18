@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,7 +31,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
@@ -37,6 +46,8 @@ import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +77,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,11 +95,18 @@ data class YouTubeState(
     /** Video most recently started on the TV. */
     val playingId: String? = null,
     val error: String? = null,
+    val favourites: List<Video> = emptyList(),
+    val recentSearches: List<String> = emptyList(),
 )
 
 class YouTubeActions(
     val search: (String) -> Unit,
+    /** Leaves the results and goes back to favourites and recent searches. */
+    val clear: () -> Unit,
     val play: (Video) -> Unit,
+    val playNext: (Video) -> Unit,
+    val addToQueue: (Video) -> Unit,
+    val toggleFavourite: (Video) -> Unit,
     val link: (String) -> Unit,
     val unlink: () -> Unit,
 )
@@ -211,7 +230,7 @@ private fun SearchContent(state: YouTubeState, actions: YouTubeActions, startWit
             leadingIcon = { Icon(Icons.Filled.Search, null, tint = Palette.TextDim) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = ""; focus.requestFocus() }) {
+                    IconButton(onClick = { query = ""; actions.clear(); focus.requestFocus() }) {
                         Icon(Icons.Filled.Close, "Clear", tint = Palette.TextDim)
                     }
                 }
@@ -246,6 +265,7 @@ private fun SearchContent(state: YouTubeState, actions: YouTubeActions, startWit
         state.searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Palette.Accent)
         }
+        state.searchedFor == null -> HomeContent(state, actions, onRecent = { query = it; submit(it) })
         state.results.isEmpty() -> Box(
             Modifier
                 .fillMaxWidth()
@@ -253,31 +273,80 @@ private fun SearchContent(state: YouTubeState, actions: YouTubeActions, startWit
             contentAlignment = Alignment.TopCenter,
         ) {
             Text(
-                if (state.searchedFor == null) "Type or tap the mic, then pick a video.\nIt plays on the TV."
-                else "Nothing found for \"${state.searchedFor}\"",
+                "Nothing found for \"${state.searchedFor}\"",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Palette.TextDim,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
         else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(state.results, key = { it.id }) { video ->
-                VideoRow(
-                    video,
-                    sending = state.sendingId == video.id,
-                    playing = state.playingId == video.id,
-                    onClick = { actions.play(video) },
-                )
-            }
+            items(state.results, key = { it.id }) { video -> VideoRow(video, state, actions) }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
 
+/** Shown before searching: recent searches as chips, then favourite videos. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun VideoRow(video: Video, sending: Boolean, playing: Boolean, onClick: () -> Unit) {
+private fun HomeContent(state: YouTubeState, actions: YouTubeActions, onRecent: (String) -> Unit) {
+    if (state.recentSearches.isEmpty() && state.favourites.isEmpty()) {
+        Text(
+            "Type or tap the mic, then pick a video.\nIt plays on the TV.\n\nTap ☆ on a video to keep it here.",
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 40.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = Palette.TextDim,
+            textAlign = TextAlign.Center,
+        )
+        return
+    }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (state.recentSearches.isNotEmpty()) {
+            item { SectionTitle("Recent searches") }
+            item {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.recentSearches.forEach { recent ->
+                        Surface(
+                            onClick = { onRecent(recent) },
+                            shape = RoundedCornerShape(50),
+                            color = Palette.SurfaceRaised,
+                        ) {
+                            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.History, null, tint = Palette.TextDim, modifier = Modifier.size(18.dp))
+                                Text(recent, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (state.favourites.isNotEmpty()) {
+            item { SectionTitle("Favourites") }
+            items(state.favourites, key = { "fav-" + it.id }) { video -> VideoRow(video, state, actions) }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) = Text(
+    text,
+    Modifier.padding(top = 12.dp, bottom = 4.dp),
+    style = MaterialTheme.typography.titleMedium,
+    color = Palette.TextDim,
+)
+
+@Composable
+private fun VideoRow(video: Video, state: YouTubeState, actions: YouTubeActions) {
+    val sending = state.sendingId == video.id
+    val playing = state.playingId == video.id
+    val favourite = state.favourites.any { it.id == video.id }
     Surface(
-        onClick = onClick,
+        onClick = { actions.play(video) },
         shape = RoundedCornerShape(16.dp),
         color = if (playing) Palette.SurfaceRaised else Color.Transparent,
         modifier = Modifier.fillMaxWidth(),
@@ -285,7 +354,7 @@ private fun VideoRow(video: Video, sending: Boolean, playing: Boolean, onClick: 
         Row(Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
-                    .width(150.dp)
+                    .width(136.dp)
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Palette.SurfaceRaised)
@@ -348,6 +417,43 @@ private fun VideoRow(video: Video, sending: Boolean, playing: Boolean, onClick: 
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = { actions.toggleFavourite(video) }) {
+                    Icon(
+                        if (favourite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                        if (favourite) "Remove from favourites" else "Add to favourites",
+                        tint = if (favourite) Palette.Waiting else Palette.TextDim,
+                    )
+                }
+                QueueMenu(video, actions)
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueMenu(video: Video, actions: YouTubeActions) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, "More options", tint = Palette.TextDim)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Palette.SurfaceRaised) {
+            DropdownMenuItem(
+                text = { Text("Play now") },
+                leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
+                onClick = { open = false; actions.play(video) },
+            )
+            DropdownMenuItem(
+                text = { Text("Play next") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null) },
+                onClick = { open = false; actions.playNext(video) },
+            )
+            DropdownMenuItem(
+                text = { Text("Add to queue") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                onClick = { open = false; actions.addToQueue(video) },
+            )
         }
     }
 }

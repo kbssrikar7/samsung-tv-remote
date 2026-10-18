@@ -9,6 +9,7 @@ import android.util.Base64
 import android.util.Log
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -142,6 +143,33 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
                 AppStatus(json.optBoolean("running"), json.optBoolean("visible"))
             }
         }.getOrNull()
+    }
+
+    data class Volume(val level: Int, val muted: Boolean)
+
+    /**
+     * Blocking. The TV's current volume through its UPnP RenderingControl service (the key-based
+     * remote API can only step the volume, not read it). Null if the TV doesn't answer.
+     */
+    fun volume(): Volume? {
+        val ip = host ?: return null
+        fun query(action: String, tag: String): String? = runCatching {
+            val body = """<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" """ +
+                """s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>""" +
+                """<u:$action xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">""" +
+                """<InstanceID>0</InstanceID><Channel>Master</Channel></u:$action></s:Body></s:Envelope>"""
+            val request = Request.Builder()
+                .url("http://$ip:9197/upnp/control/RenderingControl1")
+                .header("SOAPACTION", "\"urn:schemas-upnp-org:service:RenderingControl:1#$action\"")
+                .post(body.toRequestBody("text/xml; charset=\"utf-8\"".toMediaType()))
+                .build()
+            http.newCall(request).execute().use { response ->
+                Regex("<$tag>([^<]*)</$tag>").find(response.body!!.string())?.groupValues?.get(1)
+            }
+        }.getOrNull()
+        val level = query("GetVolume", "CurrentVolume")?.trim()?.toIntOrNull() ?: return null
+        val muted = query("GetMute", "CurrentMute")?.trim() == "1"
+        return Volume(level, muted)
     }
 
     /** Reads the TV's name and Wi-Fi MAC (the MAC lets Wake-on-LAN work later while the TV is off). */

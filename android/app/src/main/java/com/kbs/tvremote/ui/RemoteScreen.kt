@@ -116,6 +116,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import com.kbs.tvremote.TvClient
 import com.kbs.tvremote.TvDiscovery
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -132,6 +133,9 @@ data class RemoteState(
     val youtube: YouTubeState,
     /** Several TVs answered discovery; the user has to pick one. */
     val foundTvs: List<TvDiscovery.FoundTv> = emptyList(),
+    val volume: TvClient.Volume? = null,
+    /** A YouTube video playing on the TV, when YouTube is linked. */
+    val nowPlaying: NowPlaying? = null,
 )
 
 class RemoteActions(
@@ -141,6 +145,7 @@ class RemoteActions(
     val retry: () -> Unit,
     val youtube: YouTubeActions,
     val findTv: () -> Unit,
+    val nowPlaying: NowPlayingActions,
     val chooseTv: (TvDiscovery.FoundTv) -> Unit,
     val saveIp: (String) -> Unit,
     val forgetPairing: () -> Unit,
@@ -157,6 +162,7 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var startWithVoice by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showNowPlaying by rememberSaveable { mutableStateOf(false) }
 
     Surface(color = Palette.Background, contentColor = Palette.Text, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -171,6 +177,10 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
                 onOpen = { startWithVoice = false; showSearch = true },
                 onVoice = { startWithVoice = true; showSearch = true },
             )
+            state.nowPlaying?.let {
+                Spacer(Modifier.height(12.dp))
+                NowPlayingBar(it, actions.nowPlaying, onOpen = { showNowPlaying = true })
+            }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 AppChip("YouTube", Icons.Filled.SmartDisplay, Palette.YouTube) { actions.launch(TvApp.YOUTUBE) }
@@ -190,7 +200,7 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
                 RoundKey("Mute", Icons.AutoMirrored.Filled.VolumeOff, "KEY_MUTE", actions.key)
             }
             Spacer(Modifier.height(16.dp))
-            VolumeRocker(actions.key)
+            VolumeRocker(state.volume, actions.key)
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PillKey("Play", Icons.Filled.PlayArrow, "KEY_PLAY", actions.key)
@@ -206,6 +216,16 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             containerColor = Palette.Surface,
         ) {
             MoreSheet(actions.key, onSettings = { showMore = false; showSettings = true })
+        }
+    }
+    val nowPlaying = state.nowPlaying
+    if (showNowPlaying && nowPlaying != null) {
+        ModalBottomSheet(
+            onDismissRequest = { showNowPlaying = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Palette.Surface,
+        ) {
+            NowPlayingSheet(nowPlaying, actions.nowPlaying)
         }
     }
     if (showSearch) {
@@ -527,7 +547,7 @@ private fun BoxScope.ArrowKey(
 }
 
 @Composable
-private fun VolumeRocker(onKey: (String) -> Unit) {
+private fun VolumeRocker(volume: TvClient.Volume?, onKey: (String) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -540,7 +560,16 @@ private fun VolumeRocker(onKey: (String) -> Unit) {
         RockerHalf(Icons.Filled.Remove, "Volume down", "KEY_VOLDOWN", onKey)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.VolumeUp, null, tint = Palette.TextDim, modifier = Modifier.size(20.dp))
-            Text("Volume", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.labelLarge, color = Palette.TextDim)
+            Text(
+                when {
+                    volume == null -> "Volume"
+                    volume.muted -> "Muted"
+                    else -> "Volume ${volume.level}"
+                },
+                Modifier.padding(start = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+                color = Palette.TextDim,
+            )
         }
         RockerHalf(Icons.Filled.Add, "Volume up", "KEY_VOLUP", onKey)
     }

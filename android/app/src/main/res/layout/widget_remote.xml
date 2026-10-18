@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <ImageButton
+        android:id="@+id/widget_vol_down"
+        style="@style/WidgetButton"
+        android:contentDescription="@string/widget_vol_down"
+        android:src="@drawable/ic_widget_vol_down" />
+
+    <ImageButton
+        android:id="@+id/widget_mute"
+        style="@style/WidgetButton"
+        android:contentDescription="@string/widget_mute"
+        android:src="@drawable/ic_widget_mute" />
+
+    <ImageButton
+        android:id="@+id/widget_vol_up"
+        style="@style/WidgetButton"
+        android:contentDescription="@string/widget_vol_up"
+        android:src="@drawable/ic_widget_vol_up" />
+
+    <ImageButton
+        android:id="@+id/widget_play"
+        style="@style/WidgetButton"
+        android:contentDescription="@string/widget_play"
+        android:src="@drawable/ic_widget_play" />
+
+    <ImageButton
+        android:id="@+id/widget_pause"
+        style="@style/WidgetButton"
+        android:contentDescription="@string/widget_pause"
+        android:src="@drawable/ic_widget_pause" />
+</LinearLayout>

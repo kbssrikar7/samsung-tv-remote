@@ -46,6 +46,22 @@ class YouTubeSearch(private val http: OkHttpClient) {
         }
     }
 
+    /** Blocking. Title and channel of [videoId] (for videos started on the TV, not from search). */
+    fun details(videoId: String): Video? = runCatching {
+        val url = "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=$videoId"
+        http.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val json = JSONObject(response.body!!.string())
+            Video(
+                id = videoId,
+                title = json.optString("title"),
+                channel = json.optString("author_name"),
+                duration = "",
+                thumbnail = "https://i.ytimg.com/vi/$videoId/mqdefault.jpg",
+            )
+        }
+    }.getOrNull()
+
     private fun parse(root: JSONObject): List<Video> {
         val sections = root.optJSONObject("contents")
             ?.optJSONObject("twoColumnSearchResultsRenderer")

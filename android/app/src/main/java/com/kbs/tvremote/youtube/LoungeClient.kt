@@ -2,13 +2,16 @@ package com.kbs.tvremote.youtube
 
 import androidx.core.content.edit
 import android.content.SharedPreferences
+import okhttp3.Call
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Plays videos on the TV's YouTube app through YouTube's "lounge" API - the same channel the
@@ -20,12 +23,25 @@ import java.util.UUID
  */
 class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPreferences) {
 
-    private var loungeToken: String? = null
-    private var sid: String? = null
-    private var gsessionId: String? = null
-    private var lastEventId = 0
+    /** What the TV's YouTube reports about playback. Times are in seconds. */
+    data class Playback(val videoId: String, val state: State, val position: Double, val duration: Double)
+
+    enum class State { PLAYING, PAUSED, BUFFERING, ENDED, STOPPED }
+
+    @Volatile private var loungeToken: String? = null
+    @Volatile private var sid: String? = null
+    @Volatile private var gsessionId: String? = null
+    @Volatile private var lastEventId = 0
     private var requestId = 0
     private var screenPresent = false
+
+    /** Long-poll requests stay open for minutes, so they can't share the app's call timeout. */
+    private val longPoll = http.newBuilder()
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .build()
+
+    @Volatile private var watchCall: Call? = null
 
     private val deviceId: String by lazy {
         prefs.getString(KEY_DEVICE_ID, null) ?: UUID.randomUUID().toString().also {
@@ -69,6 +85,122 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
 
     @Throws(IOException::class)
     fun playVideo(videoId: String) = command("setPlaylist", mapOf("videoId" to videoId))
+
+    /** Plays [videoId] right after the current video. */
+    @Throws(IOException::class)
+    fun playNext(videoId: String) = command("insertVideo", mapOf("videoId" to videoId, "videoSources" to "XX"))
+
+    /** Adds [videoId] to the end of the TV's queue. */
+    @Throws(IOException::class)
+    fun addToQueue(videoId: String) = command("addVideo", mapOf("videoId" to videoId, "videoSources" to "XX"))
+
+    @Throws(IOException::class)
+    fun play() = command("play")
+
+    @Throws(IOException::class)
+    fun pause() = command("pause")
+
+    @Throws(IOException::class)
+    fun seekTo(seconds: Double) = command("seekTo", mapOf("newTime" to seconds.toInt().toString()))
+
+    /**
+     * Blocking loop that follows playback on the TV and reports it through [onPlayback] (null when
+     * nothing is playing or YouTube closed). Runs until [stopWatching] is called; reconnects on
+     * expired sessions and network errors.
+     */
+    fun watch(onPlayback: (Playback?) -> Unit) {
+        watching = true
+        while (watching) {
+            try {
+                if (sid == null) synchronized(this) { if (sid == null) connect() }
+                command("getNowPlaying")
+                val url = sessionUrl().newBuilder()
+                    .addQueryParameter("RID", "rpc")
+                    .addQueryParameter("CI", "0")
+                    .addQueryParameter("TYPE", "xmlhttp")
+                    .build()
+                val call = longPoll.newCall(Request.Builder().url(url).build())
+                watchCall = call
+                call.execute().use { response ->
+                    if (!response.isSuccessful) {
+                        if (response.code == 401) loungeToken = null
+                        dropSession()
+                        return@use
+                    }
+                    readChunks(response.body!!.source()) { events -> handleEvents(events, onPlayback) }
+                }
+            } catch (e: IOException) {
+                if (!watching) break
+                dropSession()
+                Thread.sleep(RETRY_DELAY_MS)
+            }
+        }
+    }
+
+    fun stopWatching() {
+        watching = false
+        watchCall?.cancel()
+    }
+
+    @Volatile private var watching = false
+
+    /** The stream is "length\n<json chunk>" repeated; each chunk is [[eventId, [type, args...]], ...]. */
+    private fun readChunks(source: okio.BufferedSource, onChunk: (JSONArray) -> Unit) {
+        while (watching) {
+            val header = source.readUtf8Line() ?: return
+            val length = header.trim().toIntOrNull() ?: continue
+            // Length counts UTF-16 characters of the chunk, newlines included.
+            val chunk = StringBuilder()
+            while (chunk.length < length) {
+                val line = source.readUtf8Line() ?: return
+                chunk.append(line).append('\n')
+            }
+            runCatching { JSONArray(chunk.toString()) }.getOrNull()?.let(onChunk)
+        }
+    }
+
+    private fun handleEvents(events: JSONArray, onPlayback: (Playback?) -> Unit) {
+        for (i in 0 until events.length()) {
+            val entry = events.optJSONArray(i) ?: continue
+            lastEventId = maxOf(lastEventId, entry.optInt(0))
+            val event = entry.optJSONArray(1) ?: continue
+            val data = event.optJSONObject(1)
+            when (event.optString(0)) {
+                "nowPlaying" -> {
+                    val videoId = data?.optString("videoId").orEmpty()
+                    onPlayback(if (videoId.isEmpty()) null else playback(videoId, data!!))
+                }
+                "onStateChange" -> {
+                    val videoId = lastVideoId ?: continue
+                    onPlayback(playback(videoId, data ?: continue))
+                }
+                "loungeScreenDisconnected" -> {
+                    lastVideoId = null
+                    onPlayback(null)
+                }
+            }
+        }
+    }
+
+    @Volatile private var lastVideoId: String? = null
+
+    private fun playback(videoId: String, data: JSONObject): Playback {
+        lastVideoId = videoId
+        // State codes from the YouTube player: 1 playing, 2 paused, 3 buffering, 0 ended, -1 stopped.
+        val state = when (data.optString("state")) {
+            "1" -> State.PLAYING
+            "2" -> State.PAUSED
+            "3", "5" -> State.BUFFERING
+            "0" -> State.ENDED
+            else -> State.STOPPED
+        }
+        return Playback(
+            videoId = videoId,
+            state = state,
+            position = data.optString("currentTime").toDoubleOrNull() ?: 0.0,
+            duration = data.optString("duration").toDoubleOrNull() ?: 0.0,
+        )
+    }
 
     /**
      * Sends a lounge command, transparently refreshing an expired token or session once.
@@ -174,5 +306,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         const val DEVICE_NAME = "TV Remote"
         const val KEY_SCREEN_ID = "yt_screen_id"
         const val KEY_DEVICE_ID = "yt_device_id"
+        const val RETRY_DELAY_MS = 3000L
     }
 }
