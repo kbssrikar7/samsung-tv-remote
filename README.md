@@ -49,9 +49,11 @@ adb install -r app/build/outputs/apk/release/app-release.apk
    **Settings → Link with TV code** and type the 12 numbers into the app. This is done once per
    phone (for example by whoever sets the phone up); the link is kept from then on.
 
-If YouTube isn't open on the TV when a video is picked, the app starts TizenBrew, enters
-TizenTube from its module list and then plays the video. (TizenBrew's own autolaunch setting
-had no effect on the test TV.)
+If YouTube isn't open on the TV when a video is picked, the app tries to start TizenBrew, enter
+TizenTube from its module list (Down, then OK) and play the video. This is **not reliable yet**:
+TizenBrew restarts itself while opening, and its autolaunch setting only sometimes takes
+effect, so the key presses can miss. If YouTube was fully closed, open it once with the normal
+remote; after that, picking videos on the phone works every time.
 
 ## How it works
 
@@ -97,6 +99,7 @@ TV_IP=192.168.1.50 python3 tvremote.py key KEY_VOLUP
   standby over Wi-Fi. Turning it off always works.
 - **Volume** follows the TV's speakers; it may not reflect a soundbar connected over HDMI ARC.
 - **Notification bar buttons** can be swiped away on Android 14+; turn them back on in Settings.
+- **Starting YouTube from a fully closed TizenBrew** is unreliable (see First-time setup).
 - **Firmware updates** on the TV can change these interfaces. Tested on one TV and firmware only.
 - **Disabling Samsung components** such as `com.samsung.tv.remoteapp*` or
   `com.samsung.tizen.smartthings-thing` (e.g. while debloating) breaks the remote API.
