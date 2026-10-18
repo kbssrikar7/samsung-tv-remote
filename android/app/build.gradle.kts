@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -9,11 +11,27 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kbs.tvremote"
         minSdk = 26
         targetSdk = 36
         versionCode = 3
         versionName = "0.3.0"
+    }
+
+    // Play release signing comes from keystore.properties (not in git). Without it, the Play build
+    // falls back to the debug key so anyone can still build and sideload the app.
+    val keystoreProps = Properties().apply {
+        val file = rootProject.file("keystore.properties")
+        if (file.exists()) file.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        if (keystoreProps.containsKey("storeFile")) {
+            create("upload") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -22,8 +40,28 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Personal sideloaded build: sign with the debug key so it installs without a keystore.
+        }
+    }
+
+    // "play" is the Google Play build: YouTube search hands off to the official YouTube app.
+    // "full" adds in-app YouTube search, playing on the TV and now playing through YouTube's
+    // unofficial web and TV-link APIs, which Play doesn't allow; it is distributed on GitHub.
+    flavorDimensions += "store"
+    productFlavors {
+        create("play") {
+            dimension = "store"
+            applicationId = "com.kbs.remoteforsamsungtv"
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
+            buildConfigField("boolean", "YOUTUBE_IN_APP", "false")
+            resValue("string", "app_name", "Remote for Samsung TV")
+        }
+        create("full") {
+            dimension = "store"
+            applicationId = "com.kbs.tvremote"
+            // Sideloaded builds keep the debug key so updates install over earlier GitHub releases.
             signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "YOUTUBE_IN_APP", "true")
+            resValue("string", "app_name", "TV Remote")
         }
     }
 
@@ -38,6 +76,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

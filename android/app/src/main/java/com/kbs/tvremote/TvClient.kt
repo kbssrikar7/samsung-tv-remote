@@ -1,12 +1,12 @@
 package com.kbs.tvremote
 
-import androidx.core.content.edit
 import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import androidx.core.content.edit
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -18,6 +18,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.IOException
+import java.net.ConnectException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -96,10 +97,28 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
         if (state != State.DISCONNECTED && host == ip) return
         disconnect()
         host = ip
+        this.token = token
         setState(State.CONNECTING, null)
+        open(legacy = pins.getBoolean(legacyKey(ip), false))
+    }
+
+    @Volatile private var token: String? = null
+    @Volatile private var legacy = false
+
+    /**
+     * 2018+ TVs take the secure token channel on 8002; 2016-2017 models only offer the plain
+     * channel on 8001, which is tried when 8002 refuses the connection.
+     */
+    private fun open(legacy: Boolean) {
+        val ip = host ?: return
+        this.legacy = legacy
         val name = Base64.encodeToString(CLIENT_NAME.toByteArray(), Base64.NO_WRAP)
-        var url = "wss://$ip:8002/api/v2/channels/samsung.remote.control?name=$name"
-        if (!token.isNullOrEmpty()) url += "&token=$token"
+        var url = if (legacy) {
+            "ws://$ip:8001/api/v2/channels/samsung.remote.control?name=$name"
+        } else {
+            "wss://$ip:8002/api/v2/channels/samsung.remote.control?name=$name"
+        }
+        if (!legacy && !token.isNullOrEmpty()) url += "&token=$token"
         socket = http.newWebSocket(Request.Builder().url(url).build(), SocketListener())
     }
 
@@ -132,15 +151,21 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
         ).enqueue(IgnoreResponse)
     }
 
-    data class AppStatus(val running: Boolean, val visible: Boolean)
+    data class AppStatus(val name: String, val running: Boolean, val visible: Boolean)
 
-    /** Blocking; whether [app] is running and in front on the TV, or null if the TV can't be reached. */
-    fun appStatus(app: TvApp): AppStatus? {
+    /**
+     * Blocking. [app]'s name and whether it is running and in front, or null if it isn't installed
+     * or the TV can't be reached.
+     */
+    fun appStatus(app: TvApp): AppStatus? = appStatus(app.id)
+
+    fun appStatus(appId: String): AppStatus? {
         val ip = host ?: return null
         return runCatching {
-            http.newCall(Request.Builder().url("http://$ip:8001/api/v2/applications/${app.id}").build()).execute().use {
+            http.newCall(Request.Builder().url("http://$ip:8001/api/v2/applications/$appId").build()).execute().use {
+                if (!it.isSuccessful) return null
                 val json = JSONObject(it.body!!.string())
-                AppStatus(json.optBoolean("running"), json.optBoolean("visible"))
+                AppStatus(json.optString("name"), json.optBoolean("running"), json.optBoolean("visible"))
             }
         }.getOrNull()
     }
@@ -224,6 +249,7 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
             val msg = runCatching { JSONObject(text) }.getOrNull() ?: return
             when (msg.optString("event")) {
                 "ms.channel.connect" -> {
+                    host?.let { ip -> if (pins.getBoolean(legacyKey(ip), false) != legacy) pins.edit { putBoolean(legacyKey(ip), legacy) } }
                     msg.optJSONObject("data")?.optString("token")?.takeIf { it.isNotEmpty() }?.let {
                         main.post { listener.onTokenIssued(it) }
                     }
@@ -252,6 +278,10 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (socket === webSocket) {
                 socket = null
+                if (!legacy && t is ConnectException && state == State.CONNECTING) {
+                    open(legacy = true)
+                    return
+                }
                 Log.d(TAG, "socket failure", t)
                 setState(State.DISCONNECTED, t.message ?: "Connection failed")
             }
@@ -270,6 +300,7 @@ class TvClient(private val listener: Listener, private val pins: SharedPreferenc
         const val DENIED = "denied"
 
         fun pinKey(ip: String) = "cert_$ip"
+        private fun legacyKey(ip: String) = "legacy_$ip"
         private const val TAG = "TvRemote"
     }
 }

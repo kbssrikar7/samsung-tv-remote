@@ -1,7 +1,7 @@
 package com.kbs.tvremote.youtube
 
-import androidx.core.content.edit
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import okhttp3.Call
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -22,11 +22,6 @@ import java.util.concurrent.TimeUnit
  * session are recreated on demand. All calls are blocking: use a background dispatcher.
  */
 class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPreferences) {
-
-    /** What the TV's YouTube reports about playback. Times are in seconds. */
-    data class Playback(val videoId: String, val state: State, val position: Double, val duration: Double)
-
-    enum class State { PLAYING, PAUSED, BUFFERING, ENDED, STOPPED }
 
     @Volatile private var loungeToken: String? = null
     @Volatile private var sid: String? = null
@@ -178,11 +173,11 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         lastVideoId = videoId
         // State codes from the YouTube player: 1 playing, 2 paused, 3 buffering, 0 ended, -1 stopped.
         val state = when (data.optString("state")) {
-            "1" -> State.PLAYING
-            "2" -> State.PAUSED
-            "3", "5" -> State.BUFFERING
-            "0" -> State.ENDED
-            else -> State.STOPPED
+            "1" -> PlaybackState.PLAYING
+            "2" -> PlaybackState.PAUSED
+            "3", "5" -> PlaybackState.BUFFERING
+            "0" -> PlaybackState.ENDED
+            else -> PlaybackState.STOPPED
         }
         return Playback(
             videoId = videoId,

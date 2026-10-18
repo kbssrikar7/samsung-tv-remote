@@ -49,8 +49,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.kbs.tvremote.youtube.LoungeClient.Playback
-import com.kbs.tvremote.youtube.LoungeClient.State
+import com.kbs.tvremote.youtube.Playback
+import com.kbs.tvremote.youtube.PlaybackState
 import com.kbs.tvremote.youtube.Video
 import kotlinx.coroutines.delay
 
@@ -73,7 +73,7 @@ private fun livePosition(nowPlaying: NowPlaying): Double {
         }
     }
     val p = nowPlaying.playback
-    val elapsed = if (p.state == State.PLAYING) (now - nowPlaying.reportedAt) / 1000.0 else 0.0
+    val elapsed = if (p.state == PlaybackState.PLAYING) (now - nowPlaying.reportedAt) / 1000.0 else 0.0
     return (p.position + elapsed).coerceIn(0.0, p.duration.takeIf { it > 0 } ?: Double.MAX_VALUE)
 }
 
@@ -215,8 +215,8 @@ private fun Thumbnail(videoId: String, modifier: Modifier, corner: Dp = 12.dp) {
 }
 
 @Composable
-private fun PlayPauseButton(state: State, onClick: () -> Unit, size: Dp) {
-    val playing = state == State.PLAYING || state == State.BUFFERING
+private fun PlayPauseButton(state: PlaybackState, onClick: () -> Unit, size: Dp) {
+    val playing = state == PlaybackState.PLAYING || state == PlaybackState.BUFFERING
     val label = if (playing) "Pause" else "Play"
     Box(
         Modifier

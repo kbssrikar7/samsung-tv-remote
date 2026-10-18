@@ -1,11 +1,5 @@
 package com.kbs.tvremote.ui
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.speech.RecognizerIntent
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +63,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -191,29 +184,15 @@ private fun SearchContent(state: YouTubeState, actions: YouTubeActions, startWit
     var query by rememberSaveable { mutableStateOf(state.searchedFor.orEmpty()) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
-    val context = LocalContext.current
     val submit = { q: String ->
         if (q.isNotBlank()) {
             focusManager.clearFocus()
             actions.search(q.trim())
         }
     }
-    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (!spoken.isNullOrBlank()) {
-            query = spoken
-            submit(spoken)
-        }
-    }
-    val listen = {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_PROMPT, "What do you want to watch?")
-        try {
-            speech.launch(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(context, "Voice search isn't available on this phone", Toast.LENGTH_SHORT).show()
-        }
+    val listen = rememberVoiceInput { spoken ->
+        query = spoken
+        submit(spoken)
     }
     LaunchedEffect(Unit) {
         when {

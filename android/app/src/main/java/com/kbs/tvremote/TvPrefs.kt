@@ -9,6 +9,7 @@ object TvPrefs {
     fun token(ip: String) = "token_$ip"
     fun mac(ip: String) = "mac_$ip"
     fun name(ip: String) = "name_$ip"
+    fun apps(ip: String) = "apps_$ip"
 
     fun of(context: Context): SharedPreferences = context.getSharedPreferences("tv", Context.MODE_PRIVATE)
 }

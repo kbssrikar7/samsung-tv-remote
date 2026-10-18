@@ -1,6 +1,10 @@
 package com.kbs.tvremote
 
 import android.Manifest
+import android.app.SearchManager
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -8,13 +12,14 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.kbs.tvremote.ui.NowPlaying
 import com.kbs.tvremote.ui.NowPlayingActions
@@ -23,17 +28,18 @@ import com.kbs.tvremote.ui.RemoteScreen
 import com.kbs.tvremote.ui.RemoteState
 import com.kbs.tvremote.ui.RemoteTheme
 import com.kbs.tvremote.ui.Status
-import com.kbs.tvremote.ui.TvApp
 import com.kbs.tvremote.ui.YouTubeActions
 import com.kbs.tvremote.ui.YouTubeState
 import com.kbs.tvremote.youtube.Library
-import com.kbs.tvremote.youtube.LoungeClient
+import com.kbs.tvremote.youtube.Playback
+import com.kbs.tvremote.youtube.PlaybackState
 import com.kbs.tvremote.youtube.Video
-import com.kbs.tvremote.youtube.YouTubeSearch
+import com.kbs.tvremote.youtube.YouTubeFeature
+import com.kbs.tvremote.youtube.YouTubeRemote
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -49,8 +55,11 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
 
     // Internet traffic (YouTube) uses normal certificate validation, unlike the TV connection.
     private val web by lazy { OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build() }
-    private val youtubeSearch by lazy { YouTubeSearch(web) }
-    private val lounge by lazy { LoungeClient(web, prefs) }
+    /** In-app YouTube (GitHub build only); null in the Play build. */
+    private val youtube: YouTubeRemote? by lazy { YouTubeFeature.create(web, prefs) }
+
+    /** The in-app YouTube, for code that only runs when [youtubeInApp] is true. */
+    private val yt: YouTubeRemote get() = checkNotNull(youtube)
     private val library by lazy { Library(prefs) }
     private var watchJob: Job? = null
     /** Video sent after a cold start, completed once the TV reports playing it. */
@@ -63,6 +72,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     }
 
     private var resumed = false
+    private var appsDetected = false
     /** Grows while the TV stays unreachable so an off TV doesn't keep the radio busy. */
     private var reconnectDelayMs = RECONNECT_DELAY_MS
 
@@ -88,7 +98,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         search = { query ->
             updateYouTube { copy(searching = true, searchedFor = query, error = null, recentSearches = library.addRecentSearch(query)) }
             lifecycleScope.launch {
-                val result = withContext(Dispatchers.IO) { runCatching { youtubeSearch.search(query) } }
+                val result = withContext(Dispatchers.IO) { runCatching { yt.search(query) } }
                 updateYouTube {
                     copy(
                         searching = false,
@@ -100,26 +110,26 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         },
         clear = { updateYouTube { copy(searchedFor = null, results = emptyList(), error = null) } },
         play = { video -> playOnTv(video) },
-        playNext = { video -> queue(video, "Will play next") { lounge.playNext(it) } },
-        addToQueue = { video -> queue(video, "Added to the queue") { lounge.addToQueue(it) } },
+        playNext = { video -> queue(video, "Will play next") { yt.playNext(it) } },
+        addToQueue = { video -> queue(video, "Added to the queue") { yt.addToQueue(it) } },
         toggleFavourite = { video -> updateYouTube { copy(favourites = library.toggleFavourite(video)) } },
         link = { code ->
             updateYouTube { copy(linking = true, error = null) }
             lifecycleScope.launch {
-                val result = withContext(Dispatchers.IO) { runCatching { lounge.pair(code) } }
+                val result = withContext(Dispatchers.IO) { runCatching { yt.link(code) } }
                 updateYouTube {
                     copy(
                         linking = false,
-                        linked = lounge.isLinked,
+                        linked = yt.isLinked,
                         error = result.exceptionOrNull()?.let { it.message ?: "Couldn't connect to YouTube" },
                     )
                 }
-                if (lounge.isLinked) startWatching()
+                if (yt.isLinked) startWatching()
             }
         },
         unlink = {
             stopWatching()
-            lounge.unlink()
+            yt.unlink()
             updateYouTube { YouTubeState(linked = false, favourites = favourites, recentSearches = recentSearches) }
             uiState = uiState.copy(nowPlaying = null)
         },
@@ -127,7 +137,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
 
     private val actions = RemoteActions(
         key = { key -> sendKey(key) },
-        launch = { app -> if (app == TvApp.YOUTUBE) openYouTube() else client.launchApp(APPS.getValue(app)) },
+        launch = { app -> if (app.kind == TvApps.Kind.YOUTUBE) openYouTube() else client.launchApp(TvClient.TvApp(app.id, app.name)) },
+        searchOnPhone = { query -> searchOnPhone(query) },
         power = { power() },
         retry = {
             client.disconnect()
@@ -138,7 +149,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         setNotification = { enabled -> setNotification(enabled) },
         nowPlaying = NowPlayingActions(
             togglePlay = { togglePlay() },
-            seekTo = { seconds -> inBackground { lounge.seekTo(seconds) } },
+            seekTo = { seconds -> inBackground { yt.seekTo(seconds) } },
         ),
         chooseTv = { tv -> useTv(tv.ip, tv.name) },
         saveIp = { newIp -> useTv(newIp, null) },
@@ -152,11 +163,13 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        installedApps = ip?.let { TvApps.load(prefs, it) }.orEmpty()
         uiState = uiState.copy(
             tvName = ip?.let { prefs.getString(nameKey(it), null) } ?: uiState.tvName,
             ip = ip,
+            apps = installedApps.visibleShortcuts(),
             youtube = YouTubeState(
-                linked = lounge.isLinked,
+                linked = youtube?.isLinked == true,
                 favourites = library.favourites(),
                 recentSearches = library.recentSearches(),
             ),
@@ -175,7 +188,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         resumed = true
         reconnectDelayMs = RECONNECT_DELAY_MS
         if (ip == null) findTv() else connect()
-        if (lounge.isLinked) startWatching()
+        if (youtube?.isLinked == true) startWatching()
     }
 
     override fun onPause() {
@@ -218,19 +231,19 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     private fun startWatching() {
         if (watchJob?.isActive == true) return
         watchJob = lifecycleScope.launch(Dispatchers.IO) {
-            lounge.watch { playback -> main.post { onPlayback(playback) } }
+            yt.watch { playback -> main.post { onPlayback(playback) } }
         }
     }
 
     private fun stopWatching() {
-        lounge.stopWatching()
+        youtube?.stopWatching()
         watchJob?.cancel()
         watchJob = null
     }
 
-    private fun onPlayback(playback: LoungeClient.Playback?) {
+    private fun onPlayback(playback: Playback?) {
         awaitedVideo?.let { (id, confirmed) -> if (playback?.videoId == id) confirmed.complete(Unit) }
-        if (playback == null || playback.state == LoungeClient.State.STOPPED) {
+        if (playback == null || playback.state == PlaybackState.STOPPED) {
             uiState = uiState.copy(nowPlaying = null)
             return
         }
@@ -240,7 +253,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         uiState = uiState.copy(nowPlaying = NowPlaying(known, playback, System.currentTimeMillis()))
         if (known == null) {
             lifecycleScope.launch {
-                val details = withContext(Dispatchers.IO) { youtubeSearch.details(playback.videoId) } ?: return@launch
+                val details = withContext(Dispatchers.IO) { yt.details(playback.videoId) } ?: return@launch
                 val current = uiState.nowPlaying ?: return@launch
                 if (current.playback.videoId == details.id) uiState = uiState.copy(nowPlaying = current.copy(video = details))
             }
@@ -249,11 +262,11 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
 
     private fun togglePlay() {
         val current = uiState.nowPlaying ?: return
-        val playing = current.playback.state == LoungeClient.State.PLAYING
+        val playing = current.playback.state == PlaybackState.PLAYING
         // Show the change at once; the TV's own report follows and corrects it if needed.
-        val state = if (playing) LoungeClient.State.PAUSED else LoungeClient.State.PLAYING
+        val state = if (playing) PlaybackState.PAUSED else PlaybackState.PLAYING
         uiState = uiState.copy(nowPlaying = current.copy(playback = current.playback.copy(state = state)))
-        inBackground { if (playing) lounge.pause() else lounge.play() }
+        inBackground { if (playing) yt.pause() else yt.resume() }
     }
 
     private fun queue(video: Video, done: String, send: (String) -> Unit) {
@@ -268,6 +281,46 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             runCatching(block).onFailure { e ->
                 withContext(Dispatchers.Main) { toast(e.message ?: "Couldn't reach YouTube on the TV") }
             }
+        }
+    }
+
+    /** True in the GitHub build, which searches YouTube itself and plays videos on the TV. */
+    private val youtubeInApp get() = youtube != null
+
+    /** All installed apps found on the TV, including TizenBrew, which isn't shown as a button. */
+    private var installedApps: List<TvShortcut> = emptyList()
+
+    private fun List<TvShortcut>.visibleShortcuts() = filter { it.kind != TvApps.Kind.TIZENBREW }
+
+    /** TizenBrew (running TizenTube) when the GitHub build finds it on the TV, else stock YouTube. */
+    private val youtubeOnTv: String
+        get() = if (youtubeInApp && installedApps.any { it.kind == TvApps.Kind.TIZENBREW }) TvApps.TIZENBREW else TvApps.YOUTUBE
+
+    /** Asks the TV which apps are installed, once per connection, and remembers them per TV. */
+    private fun detectApps(ip: String) {
+        lifecycleScope.launch {
+            val found = withContext(Dispatchers.IO) { TvApps.detect(client, includeTizenBrew = youtubeInApp) }
+            if (found.isEmpty()) return@launch
+            installedApps = found
+            TvApps.save(prefs, ip, found)
+            uiState = uiState.copy(apps = found.visibleShortcuts())
+        }
+    }
+
+    /**
+     * Play-store build: opens the official YouTube app's search on the phone (which can cast to
+     * the TV itself), or the YouTube website if the app isn't installed.
+     */
+    private fun searchOnPhone(query: String) {
+        val app = Intent(Intent.ACTION_SEARCH)
+            .setPackage("com.google.android.youtube")
+            .putExtra(SearchManager.QUERY, query)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(app)
+        } catch (_: ActivityNotFoundException) {
+            val web = Intent(Intent.ACTION_VIEW, ("https://www.youtube.com/results?search_query=" + Uri.encode(query)).toUri())
+            runCatching { startActivity(web) }.onFailure { toast("YouTube isn't available on this phone") }
         }
     }
 
@@ -305,7 +358,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             putString(PREF_IP, newIp)
             if (name != null) putString(nameKey(newIp), name)
         }
-        uiState = uiState.copy(foundTvs = emptyList(), tvName = name ?: uiState.tvName)
+        uiState = uiState.copy(foundTvs = emptyList(), tvName = name ?: uiState.tvName, apps = TvApps.load(prefs, newIp).visibleShortcuts())
+        appsDetected = false
         client.disconnect()
         connect()
     }
@@ -329,19 +383,21 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
      * TizenBrew itself, so they can't disturb something playing.
      */
     private fun ensureYouTubeOpen(): Boolean {
-        val app = APPS.getValue(TvApp.YOUTUBE)
+        val app = TvClient.TvApp(youtubeOnTv, "YouTube")
         val before = client.appStatus(app) ?: throw IOException("Can't reach the TV. Is it on?")
         if (before.running) {
-            if (!before.visible) client.launchApp(app) // resumes straight into TizenTube
+            if (!before.visible) client.launchApp(app) // resumes where it was
             return false
         }
         client.launchApp(app)
         waitUntilInFront(app)
-        // TizenBrew starts with its top bar highlighted, so OK alone does nothing: move down onto
-        // TizenTube (the first module) and open it.
-        pressKey("KEY_DOWN")
-        Thread.sleep(800)
-        pressKey("KEY_ENTER")
+        if (app.id == TvApps.TIZENBREW) {
+            // TizenBrew starts with its top bar highlighted, so OK alone does nothing: move down
+            // onto TizenTube (the first module) and open it.
+            pressKey("KEY_DOWN")
+            Thread.sleep(800)
+            pressKey("KEY_ENTER")
+        }
         return true
     }
 
@@ -373,7 +429,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         }
     }
 
-    /** Plays [video] in the TV's YouTube (TizenTube), opening it first when needed. */
+    /** Plays [video] in the TV's YouTube (TizenTube or stock), opening it first when needed. */
     private fun playOnTv(video: Video) {
         updateYouTube { copy(sendingId = video.id, error = null) }
         startWatching()
@@ -381,7 +437,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             val result = runCatching {
                 val coldStart = withContext(Dispatchers.IO) { ensureYouTubeOpen() }
                 if (!coldStart) {
-                    withContext(Dispatchers.IO) { lounge.playVideo(video.id) }
+                    withContext(Dispatchers.IO) { yt.play(video.id) }
                     return@runCatching
                 }
                 // A just-started TizenTube may not be listening yet, and a video sent too early is
@@ -392,7 +448,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
                 try {
                     val deadline = System.currentTimeMillis() + PLAY_CONFIRM_TIMEOUT_MS
                     while (true) {
-                        withContext(Dispatchers.IO) { lounge.playVideo(video.id) }
+                        withContext(Dispatchers.IO) { yt.play(video.id) }
                         if (withTimeoutOrNull(PLAY_RESEND_MS) { confirmed.await() } != null) break
                         if (System.currentTimeMillis() > deadline) throw IOException("YouTube on the TV didn't start the video")
                     }
@@ -440,6 +496,10 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         if (state == TvClient.State.CONNECTED) {
             reconnectDelayMs = RECONNECT_DELAY_MS
             refreshVolume(delayMs = 0)
+            if (!appsDetected) {
+                appsDetected = true
+                ip?.let { detectApps(it) }
+            }
         }
         // Retrying after a denial would just pop the prompt up again; wait for a tap instead.
         if (state == TvClient.State.DISCONNECTED && resumed && !denied) {
@@ -468,12 +528,5 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         private const val MAX_RECONNECT_DELAY_MS = 60_000L
         private const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
         private val VOLUME_KEYS = setOf("KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE")
-
-        // "YouTube" opens TizenBrew (which runs the ad-free TizenTube) instead of the stock app.
-        // Both IDs are fixed per app, not per TV.
-        private val APPS = mapOf(
-            TvApp.YOUTUBE to TvClient.TvApp("xvvl3S1bvH.TizenBrewStandalone", "YouTube"),
-            TvApp.HOTSTAR to TvClient.TvApp("3201711015117", "Hotstar"),
-        )
     }
 }

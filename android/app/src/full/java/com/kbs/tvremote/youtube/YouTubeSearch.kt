@@ -8,14 +8,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
-data class Video(
-    val id: String,
-    val title: String,
-    val channel: String,
-    val duration: String,
-    val thumbnail: String,
-)
-
 /**
  * Searches YouTube through InnerTube, the JSON API the youtube.com website itself calls.
  * It needs no API key; the response layout is undocumented, so parsing is defensive.

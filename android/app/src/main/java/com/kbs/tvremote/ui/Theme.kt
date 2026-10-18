@@ -4,9 +4,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 
 /** Calm graphite palette: neutral surfaces, colour only where it carries meaning. */
@@ -53,6 +56,18 @@ private val typography = Typography(
     labelMedium = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.2.sp),
 )
 
+/**
+ * The app's text is already large, so the phone's font scale is capped: at the largest system
+ * settings, labels would otherwise overflow their buttons.
+ */
+private const val MAX_FONT_SCALE = 1.3f
+
 @Composable
-fun RemoteTheme(content: @Composable () -> Unit) =
-    MaterialTheme(colorScheme = scheme, typography = typography, content = content)
+fun RemoteTheme(content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(MAX_FONT_SCALE))
+    ) {
+        MaterialTheme(colorScheme = scheme, typography = typography, content = content)
+    }
+}

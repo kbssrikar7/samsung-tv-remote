@@ -7,6 +7,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -118,7 +123,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import com.kbs.tvremote.BuildConfig
+import com.kbs.tvremote.TvApps
 import com.kbs.tvremote.TvClient
+import com.kbs.tvremote.TvShortcut
 import com.kbs.tvremote.TvDiscovery
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -126,7 +134,6 @@ import kotlinx.coroutines.launch
 
 enum class Status { SEARCHING, NOT_FOUND, READY, CONNECTING, ALLOW, OFFLINE, DENIED }
 
-enum class TvApp { YOUTUBE, HOTSTAR }
 
 data class RemoteState(
     val tvName: String,
@@ -135,6 +142,8 @@ data class RemoteState(
     val youtube: YouTubeState,
     /** Several TVs answered discovery; the user has to pick one. */
     val foundTvs: List<TvDiscovery.FoundTv> = emptyList(),
+    /** Apps found installed on the TV, shown as shortcut buttons. */
+    val apps: List<TvShortcut> = emptyList(),
     val volume: TvClient.Volume? = null,
     val notificationEnabled: Boolean = true,
     /** A YouTube video playing on the TV, when YouTube is linked. */
@@ -143,7 +152,9 @@ data class RemoteState(
 
 class RemoteActions(
     val key: (String) -> Unit,
-    val launch: (TvApp) -> Unit,
+    val launch: (TvShortcut) -> Unit,
+    /** Play-store build: hands a search to the official YouTube app on the phone. */
+    val searchOnPhone: (String) -> Unit,
     val power: () -> Unit,
     val retry: () -> Unit,
     val youtube: YouTubeActions,
@@ -156,6 +167,8 @@ class RemoteActions(
 )
 
 private val CardShape = RoundedCornerShape(20.dp)
+private val TALL_LAYOUT_MIN_HEIGHT = 700.dp
+private val MAX_CONTENT_WIDTH = 560.dp
 private const val REPEAT_DELAY_MS = 400L
 private const val REPEAT_INTERVAL_MS = 110L
 
@@ -168,47 +181,111 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
 
+    val openSearch = { voice: Boolean -> startWithVoice = voice; showSearch = true }
+    val top: @Composable () -> Unit = {
+        Header(state, actions, onMore = { showMore = true })
+        Spacer(Modifier.height(18.dp))
+        SearchBar(onOpen = { openSearch(false) }, onVoice = { openSearch(true) })
+        state.nowPlaying?.let {
+            Spacer(Modifier.height(12.dp))
+            NowPlayingBar(it, actions.nowPlaying, onOpen = { showNowPlaying = true })
+        }
+        if (state.apps.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            AppRow(state.apps, actions.launch)
+        }
+    }
+    val bottom: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            RoundKey("Back", Icons.AutoMirrored.Filled.ArrowBack, "KEY_RETURN", actions.key)
+            RoundKey("Home", Icons.Filled.Home, "KEY_HOME", actions.key)
+            RoundKey("Mute", Icons.AutoMirrored.Filled.VolumeOff, "KEY_MUTE", actions.key)
+        }
+        Spacer(Modifier.height(16.dp))
+        VolumeRocker(state.volume, actions.key)
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PillKey("Play", Icons.Filled.PlayArrow, "KEY_PLAY", actions.key)
+            PillKey("Pause", Icons.Filled.Pause, "KEY_PAUSE", actions.key)
+        }
+    }
+
     Surface(color = Palette.Background, contentColor = Palette.Text, modifier = Modifier.fillMaxSize()) {
-        Column(
+        BoxWithConstraints(
             Modifier
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp)
-                .padding(top = 8.dp, bottom = 16.dp)
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            Header(state, actions, onMore = { showMore = true })
-            Spacer(Modifier.height(18.dp))
-            SearchBar(
-                onOpen = { startWithVoice = false; showSearch = true },
-                onVoice = { startWithVoice = true; showSearch = true },
-            )
-            state.nowPlaying?.let {
-                Spacer(Modifier.height(12.dp))
-                NowPlayingBar(it, actions.nowPlaying, onOpen = { showNowPlaying = true })
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppChip("YouTube", Icons.Filled.SmartDisplay, Palette.YouTube) { actions.launch(TvApp.YOUTUBE) }
-                AppChip("Hotstar", Icons.Filled.Movie, Palette.Hotstar) { actions.launch(TvApp.HOTSTAR) }
-            }
-            BoxWithConstraints(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                DPad(size = min(min(maxWidth - 24.dp, maxHeight - 28.dp), 296.dp), onKey = actions.key)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RoundKey("Back", Icons.AutoMirrored.Filled.ArrowBack, "KEY_RETURN", actions.key)
-                RoundKey("Home", Icons.Filled.Home, "KEY_HOME", actions.key)
-                RoundKey("Mute", Icons.AutoMirrored.Filled.VolumeOff, "KEY_MUTE", actions.key)
-            }
-            Spacer(Modifier.height(16.dp))
-            VolumeRocker(state.volume, actions.key)
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PillKey("Play", Icons.Filled.PlayArrow, "KEY_PLAY", actions.key)
-                PillKey("Pause", Icons.Filled.Pause, "KEY_PAUSE", actions.key)
+            val screenWidth = maxWidth
+            val screenHeight = maxHeight
+            val landscape = screenWidth > screenHeight
+            when {
+                // Landscape (phones turned sideways, tablets): controls left, d-pad right.
+                landscape -> Row(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        top()
+                        Spacer(Modifier.height(20.dp))
+                        bottom()
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DPad(size = min(screenHeight - 24.dp, 320.dp), onKey = actions.key)
+                    }
+                }
+                // Tall screens: everything fits, the d-pad takes the leftover space.
+                screenHeight >= TALL_LAYOUT_MIN_HEIGHT -> Column(
+                    Modifier
+                        .widthIn(max = MAX_CONTENT_WIDTH)
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 8.dp, bottom = 16.dp)
+                ) {
+                    top()
+                    BoxWithConstraints(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DPad(size = min(min(maxWidth - 24.dp, maxHeight - 28.dp), 296.dp), onKey = actions.key)
+                    }
+                    bottom()
+                }
+                // Short screens or large fonts: scroll instead of squeezing the buttons.
+                else -> Column(
+                    Modifier
+                        .widthIn(max = MAX_CONTENT_WIDTH)
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 8.dp, bottom = 16.dp)
+                ) {
+                    top()
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        DPad(size = min(screenWidth - 64.dp, 270.dp), onKey = actions.key)
+                    }
+                    bottom()
+                }
             }
         }
     }
@@ -238,7 +315,11 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Palette.Surface,
         ) {
-            YouTubeSheet(state.youtube, actions.youtube, startWithVoice)
+            if (BuildConfig.YOUTUBE_IN_APP) {
+                YouTubeSheet(state.youtube, actions.youtube, startWithVoice)
+            } else {
+                PhoneSearchSheet(startWithVoice, onSearch = { query -> showSearch = false; actions.searchOnPhone(query) })
+            }
         }
     }
     if (showSettings) SettingsDialog(state, actions, onDismiss = { showSettings = false })
@@ -373,20 +454,50 @@ private fun SearchBar(onOpen: () -> Unit, onVoice: () -> Unit) {
     }
 }
 
+/** Shortcut buttons for the TV's apps: two fill the width, more scroll sideways. */
 @Composable
-private fun RowScope.AppChip(label: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
+private fun AppRow(apps: List<TvShortcut>, onLaunch: (TvShortcut) -> Unit) {
+    if (apps.size <= 2) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            apps.forEach { AppChip(it, Modifier.weight(1f), onLaunch) }
+        }
+    } else {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            apps.forEach { AppChip(it, Modifier.widthIn(min = 150.dp), onLaunch) }
+        }
+    }
+}
+
+@Composable
+private fun AppChip(app: TvShortcut, modifier: Modifier, onLaunch: (TvShortcut) -> Unit) {
+    val (icon, color) = when (app.kind) {
+        TvApps.Kind.YOUTUBE -> Icons.Filled.SmartDisplay to Palette.YouTube
+        TvApps.Kind.MUSIC -> Icons.Filled.MusicNote to Palette.Ready
+        else -> Icons.Filled.Movie to Palette.Hotstar
+    }
     Surface(
-        onClick = onClick,
+        onClick = { onLaunch(app) },
         shape = CardShape,
         color = Palette.Surface,
         border = BorderStroke(1.dp, Palette.Outline),
-        modifier = Modifier
-            .weight(1f)
-            .height(60.dp),
+        modifier = modifier.height(60.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Icon(icon, null, tint = color, modifier = Modifier.size(26.dp))
-            Text(label, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleMedium)
+            Text(
+                app.name,
+                Modifier.padding(start = 10.dp),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

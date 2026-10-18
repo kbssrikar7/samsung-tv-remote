@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TV Remote</string>
     <string name="widget_description">Volume, mute and play/pause for the TV</string>
     <string name="widget_vol_down">Volume down</string>
     <string name="widget_mute">Mute</string>
