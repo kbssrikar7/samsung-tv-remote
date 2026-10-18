@@ -18,6 +18,11 @@ parents who just want to watch something) can use it without hunting through men
 - **Full remote**: D-pad with OK, Back, Home, Mute, Volume, Play/Pause, plus Source, Menu, Info,
   Exit, Channel, Rewind and Forward in a "More" sheet. Arrows, volume and channel repeat while held.
 - **Phone volume buttons** control the TV volume while the app is open.
+- **Now playing**: see what YouTube is playing on the TV, pause it and seek from the phone.
+- **Favourites and recent searches**, plus *Play next* / *Add to queue* on any result.
+- **Volume level** shown as a number (read from the TV).
+- **Works with the app closed**: buttons in the notification bar, a Quick Settings tile and a
+  home-screen widget.
 - **Finds the TV automatically** on Wi-Fi (no IP address needed), with manual entry as a fallback.
 - **Power** off over the network. Power on uses Wake-on-LAN (needs *Power On with Mobile* on the
   TV; not yet verified over Wi-Fi standby).
@@ -77,6 +82,31 @@ TV_IP=192.168.1.50 python3 tvremote.py pair    # accept the prompt on the TV
 TV_IP=192.168.1.50 python3 tvremote.py         # interactive: arrows, enter, backspace=back, h=home, +/-=volume
 TV_IP=192.168.1.50 python3 tvremote.py key KEY_VOLUP
 ```
+
+## Limitations
+
+- **Same Wi-Fi.** The phone and the TV must be on the same home network for every button. Mobile
+  data or another Wi-Fi won't reach the TV.
+- **First connection needs the real remote.** The TV asks once to *Allow* each new phone.
+- **YouTube search needs internet** and the one-time *Link with TV code*. It only works with the
+  YouTube app on the TV (TizenTube or the stock app), not other apps. Results come from YouTube's
+  unofficial web API, which YouTube can change; if search breaks, an app update is needed.
+- **Typing into other TV apps isn't supported.** Most TV apps (YouTube, Hotstar) use their own
+  on-screen letter grids, which a remote's text input can't reach.
+- **Turning the TV on** from the phone needs *Power On with Mobile* and may not work from deep
+  standby over Wi-Fi. Turning it off always works.
+- **Volume** follows the TV's speakers; it may not reflect a soundbar connected over HDMI ARC.
+- **Notification bar buttons** can be swiped away on Android 14+; turn them back on in Settings.
+- **Firmware updates** on the TV can change these interfaces. Tested on one TV and firmware only.
+- **Disabling Samsung components** such as `com.samsung.tv.remoteapp*` or
+  `com.samsung.tizen.smartthings-thing` (e.g. while debloating) breaks the remote API.
+
+## Battery
+
+Nothing runs in the background. The connection to the TV is open only while the app is on
+screen; widget, notification and tile buttons connect for a moment, send one key and
+disconnect. When the TV is off, reconnect attempts back off from 3 s to once a minute, and
+"now playing" stops as soon as the app leaves the screen.
 
 ## Debloating tip
 

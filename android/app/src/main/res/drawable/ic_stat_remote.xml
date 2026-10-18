@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar icon: a remote with a d-pad ring. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M9,2h6a3,3 0,0 1,3 3v14a3,3 0,0 1,-3 3h-6a3,3 0,0 1,-3 -3v-14a3,3 0,0 1,3 -3zM12,6.5a3.5,3.5 0,1 0,0 7a3.5,3.5 0,1 0,0 -7zM12,8.5a1.5,1.5 0,1 1,0 3a1.5,1.5 0,1 1,0 -3zM9.5,16h5v1.5h-5z" />
+</vector>

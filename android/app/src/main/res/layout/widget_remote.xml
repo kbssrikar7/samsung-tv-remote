@@ -8,31 +8,31 @@
     android:padding="8dp">
 
     <ImageButton
-        android:id="@+id/widget_vol_down"
+        android:id="@+id/remote_vol_down"
         style="@style/WidgetButton"
         android:contentDescription="@string/widget_vol_down"
         android:src="@drawable/ic_widget_vol_down" />
 
     <ImageButton
-        android:id="@+id/widget_mute"
+        android:id="@+id/remote_mute"
         style="@style/WidgetButton"
         android:contentDescription="@string/widget_mute"
         android:src="@drawable/ic_widget_mute" />
 
     <ImageButton
-        android:id="@+id/widget_vol_up"
+        android:id="@+id/remote_vol_up"
         style="@style/WidgetButton"
         android:contentDescription="@string/widget_vol_up"
         android:src="@drawable/ic_widget_vol_up" />
 
     <ImageButton
-        android:id="@+id/widget_play"
+        android:id="@+id/remote_play"
         style="@style/WidgetButton"
         android:contentDescription="@string/widget_play"
         android:src="@drawable/ic_widget_play" />
 
     <ImageButton
-        android:id="@+id/widget_pause"
+        android:id="@+id/remote_pause"
         style="@style/WidgetButton"
         android:contentDescription="@string/widget_pause"
         android:src="@drawable/ic_widget_pause" />

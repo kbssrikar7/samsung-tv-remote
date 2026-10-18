@@ -78,6 +78,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -134,6 +136,7 @@ data class RemoteState(
     /** Several TVs answered discovery; the user has to pick one. */
     val foundTvs: List<TvDiscovery.FoundTv> = emptyList(),
     val volume: TvClient.Volume? = null,
+    val notificationEnabled: Boolean = true,
     /** A YouTube video playing on the TV, when YouTube is linked. */
     val nowPlaying: NowPlaying? = null,
 )
@@ -145,6 +148,7 @@ class RemoteActions(
     val retry: () -> Unit,
     val youtube: YouTubeActions,
     val findTv: () -> Unit,
+    val setNotification: (Boolean) -> Unit,
     val nowPlaying: NowPlayingActions,
     val chooseTv: (TvDiscovery.FoundTv) -> Unit,
     val saveIp: (String) -> Unit,
@@ -237,7 +241,7 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             YouTubeSheet(state.youtube, actions.youtube, startWithVoice)
         }
     }
-    if (showSettings) SettingsDialog(state.ip.orEmpty(), state.youtube.linked, actions, onDismiss = { showSettings = false })
+    if (showSettings) SettingsDialog(state, actions, onDismiss = { showSettings = false })
     if (state.foundTvs.isNotEmpty()) ChooseTvDialog(state.foundTvs, actions.chooseTv)
 }
 
@@ -631,8 +635,9 @@ private fun MoreSheet(onKey: (String) -> Unit, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun SettingsDialog(ip: String, youtubeLinked: Boolean, actions: RemoteActions, onDismiss: () -> Unit) {
-    var value by rememberSaveable { mutableStateOf(ip) }
+private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss: () -> Unit) {
+    val youtubeLinked = state.youtube.linked
+    var value by rememberSaveable { mutableStateOf(state.ip.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Palette.Surface,
@@ -646,6 +651,26 @@ private fun SettingsDialog(ip: String, youtubeLinked: Boolean, actions: RemoteAc
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     shape = RoundedCornerShape(14.dp),
                 )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Buttons in notification bar", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Volume and play from the pull-down, even when the app is closed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Palette.TextDim,
+                        )
+                    }
+                    Switch(
+                        checked = state.notificationEnabled,
+                        onCheckedChange = actions.setNotification,
+                        colors = SwitchDefaults.colors(checkedTrackColor = Palette.Accent),
+                    )
+                }
                 TextButton(onClick = { actions.findTv(); onDismiss() }, modifier = Modifier.padding(top = 8.dp)) {
                     Text("Find my TV automatically")
                 }

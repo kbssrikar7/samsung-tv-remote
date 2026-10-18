@@ -110,6 +110,7 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
      */
     fun watch(onPlayback: (Playback?) -> Unit) {
         watching = true
+        var retryDelay = RETRY_DELAY_MS
         while (watching) {
             try {
                 if (sid == null) synchronized(this) { if (sid == null) connect() }
@@ -128,11 +129,14 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
                         return@use
                     }
                     readChunks(response.body!!.source()) { events -> handleEvents(events, onPlayback) }
+                    retryDelay = RETRY_DELAY_MS
                 }
             } catch (e: IOException) {
                 if (!watching) break
                 dropSession()
-                Thread.sleep(RETRY_DELAY_MS)
+                // Back off while offline so a dead network doesn't keep the radio awake.
+                Thread.sleep(retryDelay)
+                retryDelay = (retryDelay * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
             }
         }
     }
@@ -307,5 +311,6 @@ class LoungeClient(private val http: OkHttpClient, private val prefs: SharedPref
         const val KEY_SCREEN_ID = "yt_screen_id"
         const val KEY_DEVICE_ID = "yt_device_id"
         const val RETRY_DELAY_MS = 3000L
+        const val MAX_RETRY_DELAY_MS = 60_000L
     }
 }

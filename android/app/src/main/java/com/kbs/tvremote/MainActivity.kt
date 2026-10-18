@@ -1,11 +1,14 @@
 package com.kbs.tvremote
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -55,6 +58,13 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     }
 
     private var resumed = false
+    /** Grows while the TV stays unreachable so an off TV doesn't keep the radio busy. */
+    private var reconnectDelayMs = RECONNECT_DELAY_MS
+
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) RemoteNotification.show(this) else RemoteNotification.setEnabled(this, false)
+        uiState = uiState.copy(notificationEnabled = RemoteNotification.isEnabled(this))
+    }
     private val reconnect = Runnable { connect() }
     private var discovery: Job? = null
 
@@ -120,6 +130,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         },
         youtube = youtubeActions,
         findTv = { findTv() },
+        setNotification = { enabled -> setNotification(enabled) },
         nowPlaying = NowPlayingActions(
             togglePlay = { togglePlay() },
             seekTo = { seconds -> inBackground { lounge.seekTo(seconds) } },
@@ -145,6 +156,10 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
                 recentSearches = library.recentSearches(),
             ),
         )
+        uiState = uiState.copy(notificationEnabled = RemoteNotification.isEnabled(this))
+        if (RemoteNotification.isEnabled(this)) {
+            if (RemoteNotification.hasPermission(this)) RemoteNotification.show(this) else askNotificationPermissionOnce()
+        }
         setContent {
             RemoteTheme { RemoteScreen(uiState, actions) }
         }
@@ -153,6 +168,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     override fun onResume() {
         super.onResume()
         resumed = true
+        reconnectDelayMs = RECONNECT_DELAY_MS
         if (ip == null) findTv() else connect()
         if (lounge.isLinked) startWatching()
     }
@@ -163,6 +179,22 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         main.removeCallbacks(reconnect)
         client.disconnect()
         stopWatching()
+    }
+
+    private fun setNotification(enabled: Boolean) {
+        RemoteNotification.setEnabled(this, enabled)
+        // hasPermission is always true below Android 13, so this only asks where it is needed.
+        if (enabled && !RemoteNotification.hasPermission(this)) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        uiState = uiState.copy(notificationEnabled = RemoteNotification.isEnabled(this))
+    }
+
+    /** Android 13+ needs permission for the notification remote; ask on first launch only. */
+    private fun askNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)) return
+        prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, true) }
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun sendKey(key: String) {
@@ -380,11 +412,15 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             TvClient.State.DISCONNECTED -> if (denied) Status.DENIED else Status.OFFLINE
         }
         uiState = uiState.copy(status = status)
-        if (state == TvClient.State.CONNECTED) refreshVolume(delayMs = 0)
+        if (state == TvClient.State.CONNECTED) {
+            reconnectDelayMs = RECONNECT_DELAY_MS
+            refreshVolume(delayMs = 0)
+        }
         // Retrying after a denial would just pop the prompt up again; wait for a tap instead.
         if (state == TvClient.State.DISCONNECTED && resumed && !denied) {
             main.removeCallbacks(reconnect)
-            main.postDelayed(reconnect, RECONNECT_DELAY_MS)
+            main.postDelayed(reconnect, reconnectDelayMs)
+            reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
         }
     }
 
@@ -401,6 +437,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         private fun nameKey(ip: String) = TvPrefs.name(ip)
 
         private const val RECONNECT_DELAY_MS = 3000L
+        private const val MAX_RECONNECT_DELAY_MS = 60_000L
+        private const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
         private val VOLUME_KEYS = setOf("KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE")
 
         // "YouTube" opens TizenBrew (which runs the ad-free TizenTube) instead of the stock app.
