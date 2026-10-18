@@ -31,14 +31,26 @@ parents who just want to watch something) can use it without hunting through men
 
 Tested on a 2022 Samsung UA75BU8000 (Tizen 6.5) with a Galaxy S9+ (Android 10).
 
+## Two versions
+
+| | **Google Play** ("Remote for Samsung TV") | **GitHub** ("TV Remote") |
+|---|---|---|
+| Remote, apps, volume, widget, notification | ✓ | ✓ |
+| YouTube search | Opens the official YouTube app (cast from there) | In the app, plays straight on the TV |
+| Now playing, favourites, queue | - | ✓ |
+| TizenBrew / TizenTube support | - | ✓ |
+
+The GitHub version uses YouTube's unofficial web and TV-link APIs, which Google Play doesn't
+allow, so the Play version leaves that code out entirely (separate `play` / `full` source sets).
+
 ## Install
 
 Download the APK from [Releases](../../releases) and install it, or build it yourself:
 
 ```bash
 cd android
-./gradlew assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
+./gradlew assembleFullRelease      # GitHub version: app/build/outputs/apk/full/release/
+./gradlew bundlePlayRelease        # Play version (.aab); signing key from keystore.properties
 ```
 
 ## First-time setup
@@ -90,9 +102,11 @@ TV_IP=192.168.1.50 python3 tvremote.py key KEY_VOLUP
 - **Same Wi-Fi.** The phone and the TV must be on the same home network for every button. Mobile
   data or another Wi-Fi won't reach the TV.
 - **First connection needs the real remote.** The TV asks once to *Allow* each new phone.
-- **YouTube search needs internet** and the one-time *Link with TV code*. It only works with the
-  YouTube app on the TV (TizenTube or the stock app), not other apps. Results come from YouTube's
-  unofficial web API, which YouTube can change; if search breaks, an app update is needed.
+- **YouTube search needs internet.** In the GitHub version it also needs the one-time *Link with
+  TV code*, and results come from YouTube's unofficial web API, which YouTube can change; if search
+  breaks, an app update is needed. The Play version hands searches to the YouTube app instead.
+- **Supported TVs:** Samsung Tizen smart TVs from 2016 onwards. Older models use a different
+  protocol and are not supported.
 - **Typing into other TV apps isn't supported.** Most TV apps (YouTube, Hotstar) use their own
   on-screen letter grids, which a remote's text input can't reach.
 - **Turning the TV on** from the phone needs *Power On with Mobile* and may not work from deep
