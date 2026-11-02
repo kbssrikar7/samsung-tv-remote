@@ -1,6 +1,6 @@
 # Privacy Policy - Remote for Samsung TV
 
-_Last updated: 18 October 2026_
+_Last updated: 2 November 2026_
 
 Remote for Samsung TV ("the app") is an independent, open-source remote control for Samsung
 smart TVs. It is not made by, affiliated with, or endorsed by Samsung.
@@ -15,6 +15,7 @@ developer receives no data from it.
 To work, the app keeps a few things in its private storage on your phone:
 
 - the address, name and Wi-Fi MAC address of your TV (to reconnect and to turn it on);
+- the TV's device identifier, when provided, to recognize it after its network address changes;
 - the pairing token your TV issues when you choose **Allow** on the TV;
 - your settings (for example whether the notification buttons are shown).
 
@@ -39,6 +40,7 @@ itself never records or stores audio; it only receives the recognised text.
 | Permission | Why |
 |---|---|
 | Internet / network | To talk to your TV on your home network |
+| Network and Wi-Fi state / multicast | To discover compatible TVs on your home network; the multicast lock is held only during discovery |
 | Notifications | To show the remote buttons in the notification bar (optional) |
 | Run at startup | To restore those notification buttons after the phone restarts |
 
