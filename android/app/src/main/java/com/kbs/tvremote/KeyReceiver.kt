@@ -4,6 +4,8 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.edit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -21,6 +23,8 @@ class KeyReceiver : BroadcastReceiver() {
         Thread {
             try {
                 sendKeyOnce(context.applicationContext, key)
+            } catch (_: Exception) {
+                // A failed background button must not crash the app process.
             } finally {
                 pending.finish()
             }
@@ -31,25 +35,39 @@ class KeyReceiver : BroadcastReceiver() {
         /** Blocking: connects with the stored pairing, sends [key], disconnects. */
         fun sendKeyOnce(context: Context, key: String): Boolean {
             val prefs = TvPrefs.of(context)
-            val ip = prefs.getString(TvPrefs.IP, null) ?: return false
+            val ip = prefs.getString(TvPrefs.IP, null)?.takeIf(TvPrefs::isValidIp) ?: return false
             val connected = CountDownLatch(1)
+            val expected = TvPrefs.identity(prefs, ip)
             val client = TvClient(object : TvClient.Listener {
                 override fun onStateChanged(state: TvClient.State, detail: String?) {
                     if (state == TvClient.State.CONNECTED || state == TvClient.State.DISCONNECTED) connected.countDown()
                 }
 
                 override fun onTokenIssued(token: String) = prefs.edit { putString(TvPrefs.token(ip), token) }
-            }, prefs)
-            client.connect(ip, prefs.getString(TvPrefs.token(ip), null))
-            connected.await(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
-            val sent = client.state == TvClient.State.CONNECTED && client.sendKey(key)
-            if (sent) Thread.sleep(SEND_GRACE_MS) // let the frame leave before closing the socket
-            client.disconnect()
-            return sent
+            }, prefs, TvNetwork(context))
+            try {
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CONNECT_TIMEOUT_S)
+                val info = if (expected.known) client.deviceInfo(ip, timeoutMs = 2000) else null
+                val verified = info != null && expected.matches(info.identity)
+                if (expected.known && info?.identity?.known == true && !verified) return false
+                if (expected.known && !verified && !prefs.contains(TvClient.pinKey(ip))) return false
+                Handler(Looper.getMainLooper()).post {
+                    // Selection/recovery may have changed while the background preflight ran.
+                    if (prefs.getString(TvPrefs.IP, null) != ip ||
+                        (expected.known && !expected.matches(TvPrefs.identity(prefs, ip)))) {
+                        connected.countDown()
+                    } else client.connect(ip, prefs.getString(TvPrefs.token(ip), null), allowPairing = false,
+                        allowPlain = !expected.known || verified)
+                }
+                connected.await((deadline - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
+                val sent = client.state == TvClient.State.CONNECTED && client.sendKey(key)
+                if (sent) Thread.sleep(SEND_GRACE_MS)
+                return sent
+            } finally { client.disconnect() }
         }
 
         private const val EXTRA_KEY = "key"
-        private const val CONNECT_TIMEOUT_S = 5L
+        private const val CONNECT_TIMEOUT_S = 8L
         private const val SEND_GRACE_MS = 200L
 
         /** The volume and playback buttons shared by the widget and the notification. */

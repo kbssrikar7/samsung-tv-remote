@@ -13,12 +13,12 @@ android {
     defaultConfig {
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
-    // Play release signing comes from keystore.properties (not in git). Without it, the Play build
-    // falls back to the debug key so anyone can still build and sideload the app.
+    // Release signing comes from keystore.properties (not in git). Without it the Play
+    // release is unsigned; Play debug builds still use Android's normal debug signing.
     val keystoreProps = Properties().apply {
         val file = rootProject.file("keystore.properties")
         if (file.exists()) file.inputStream().use { load(it) }
@@ -45,13 +45,13 @@ android {
 
     // "play" is the Google Play build: YouTube search hands off to the official YouTube app.
     // "full" adds in-app YouTube search, playing on the TV and now playing through YouTube's
-    // unofficial web and TV-link APIs, which Play doesn't allow; it is distributed on GitHub.
+    // unofficial web and TV-link APIs; this experimental integration is distributed on GitHub.
     flavorDimensions += "store"
     productFlavors {
         create("play") {
             dimension = "store"
             applicationId = "com.kbs.remoteforsamsungtv"
-            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("upload")
             buildConfigField("boolean", "YOUTUBE_IN_APP", "false")
             resValue("string", "app_name", "Remote for Samsung TV")
         }
@@ -78,9 +78,15 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.13.0")

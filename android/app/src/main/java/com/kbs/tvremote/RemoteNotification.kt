@@ -26,7 +26,7 @@ object RemoteNotification {
     private const val NOTIFICATION_ID = 1
     private const val KEY_ENABLED = "notification_enabled"
 
-    fun isEnabled(context: Context) = TvPrefs.of(context).getBoolean(KEY_ENABLED, true)
+    fun isEnabled(context: Context) = TvPrefs.of(context).getBoolean(KEY_ENABLED, false)
 
     fun setEnabled(context: Context, enabled: Boolean) {
         TvPrefs.of(context).edit { putBoolean(KEY_ENABLED, enabled) }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.filled.MusicNote
@@ -128,6 +129,7 @@ import com.kbs.tvremote.TvApps
 import com.kbs.tvremote.TvClient
 import com.kbs.tvremote.TvShortcut
 import com.kbs.tvremote.TvDiscovery
+import com.kbs.tvremote.TvPrefs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -148,6 +150,7 @@ data class RemoteState(
     val notificationEnabled: Boolean = true,
     /** A YouTube video playing on the TV, when YouTube is linked. */
     val nowPlaying: NowPlaying? = null,
+    val detail: String? = null,
 )
 
 class RemoteActions(
@@ -182,7 +185,12 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
 
     val openSearch = { voice: Boolean -> startWithVoice = voice; showSearch = true }
-    val header: @Composable () -> Unit = { Header(state, actions, onMore = { showMore = true }) }
+    val header: @Composable () -> Unit = {
+        Column {
+            Header(state, actions, onMore = { showMore = true })
+            if (state.status != Status.READY) SetupHelp(state, actions) { showSettings = true }
+        }
+    }
     val searchAndApps: @Composable () -> Unit = {
         SearchBar(onOpen = { openSearch(false) }, onVoice = { openSearch(true) })
         state.nowPlaying?.let {
@@ -369,6 +377,42 @@ private fun Header(state: RemoteState, actions: RemoteActions, onMore: () -> Uni
 }
 
 @Composable
+private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: () -> Unit) {
+    Surface(
+        color = Palette.Surface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                if (state.status == Status.ALLOW) "One last step: look at your TV" else "Let's connect your TV",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                when (state.status) {
+                    Status.ALLOW -> "Use your TV remote to choose Allow on the TV screen. You only need to pair this phone once."
+                    Status.SEARCHING, Status.CONNECTING -> state.detail ?: "Turn your TV on. Connect your phone to the same home Wi-Fi as the TV. We'll find it for you."
+                    else -> state.detail ?: "Turn your TV on and join the same home Wi-Fi. Guest Wi-Fi or a VPN may keep your phone from reaching the TV."
+                },
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Palette.TextDim,
+            )
+            if (state.status != Status.SEARCHING && state.status != Status.CONNECTING && state.status != Status.ALLOW) {
+                Row {
+                    TextButton(onClick = actions.findTv) { Text("Find my TV") }
+                    TextButton(onClick = onSettings) { Text("Connection settings") }
+                }
+            }
+            if (state.youtube.linked && state.status != Status.ALLOW) {
+                Text("YouTube is linked separately. Remote buttons still need this TV connection.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatusLine(status: Status, onRetry: () -> Unit) {
     val (color, label) = when (status) {
         Status.SEARCHING -> Palette.Waiting to "Looking for your TV…"
@@ -376,7 +420,7 @@ private fun StatusLine(status: Status, onRetry: () -> Unit) {
         Status.READY -> Palette.Ready to "Connected"
         Status.CONNECTING -> Palette.Waiting to "Connecting…"
         Status.ALLOW -> Palette.Waiting to "Choose Allow on the TV"
-        Status.OFFLINE -> Palette.Power to "TV is off · retrying"
+        Status.OFFLINE -> Palette.Power to "Not connected · tap to retry"
         Status.DENIED -> Palette.Power to "Not allowed · tap to retry"
     }
     Row(
@@ -755,18 +799,24 @@ private fun MoreSheet(onKey: (String) -> Unit, onSettings: () -> Unit) {
 
 @Composable
 private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val youtubeLinked = state.youtube.linked
     var value by rememberSaveable { mutableStateOf(state.ip.orEmpty()) }
+    var manual by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Palette.Surface,
-        title = { Text("TV address") },
+        title = { Text("TV settings") },
         text = {
             Column {
-                OutlinedTextField(
+                TextButton(onClick = { actions.findTv(); onDismiss() }) { Text("Find my TV automatically") }
+                TextButton(onClick = { manual = !manual }) { Text("Enter address manually (advanced)") }
+                if (manual) OutlinedTextField(
                     value = value,
                     onValueChange = { value = it.trim() },
                     singleLine = true,
+                    label = { Text("TV address, e.g. 192.168.1.10") },
+                    isError = value.isNotEmpty() && !TvPrefs.isValidIp(value),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     shape = RoundedCornerShape(14.dp),
                 )
@@ -790,9 +840,6 @@ private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss
                         colors = SwitchDefaults.colors(checkedTrackColor = Palette.Accent),
                     )
                 }
-                TextButton(onClick = { actions.findTv(); onDismiss() }, modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Find my TV automatically")
-                }
                 TextButton(onClick = { actions.forgetPairing(); onDismiss() }) {
                     Text("Forget TV pairing", color = Palette.Power)
                 }
@@ -801,9 +848,18 @@ private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss
                         Text("Disconnect YouTube", color = Palette.Power)
                     }
                 }
+                TextButton(onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,
+                        "https://github.com/kbssrikar7/samsung-tv-remote/blob/main/PRIVACY.md".toUri())) }
+                }) { Text("Privacy policy") }
             }
         },
-        confirmButton = { TextButton(onClick = { actions.saveIp(value); onDismiss() }) { Text("Save") } },
+        confirmButton = {
+            TextButton(enabled = !manual || TvPrefs.isValidIp(value), onClick = {
+                if (manual) actions.saveIp(value)
+                onDismiss()
+            }) { Text(if (manual) "Save" else "Done") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
