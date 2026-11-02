@@ -80,11 +80,18 @@ android {
     }
 
     testOptions { unitTests.isIncludeAndroidResources = true }
+
+    // The encrypted dependency block is only readable by Google; F-Droid rejects it in APKs.
+    // Play still receives it inside the bundle.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
+    }
 }
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

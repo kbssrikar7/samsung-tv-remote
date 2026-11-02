@@ -1,0 +1,5 @@
+- Finds the same TV again when the router changes its address, keeping the pairing
+- Sends TV controls over Wi-Fi even when mobile data is the phone's default connection
+- Clearer pairing errors and no endless waiting when the TV denies or ignores the request
+- Many fixes for switching TVs, reconnecting and YouTube now playing
+- Pairing data is no longer included in Android backups

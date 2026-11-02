@@ -1,0 +1,32 @@
+A clear, easy phone remote for Samsung Tizen smart TVs, designed so anyone in the family can use it: big labelled buttons, a calm dark design, no ads, no account and no tracking.
+
+<b>Remote</b>
+<ul>
+<li>Finds compatible TVs on your home Wi-Fi by itself; no IP address needed</li>
+<li>Large D-pad with OK, Back, Home, Mute, Volume and Play/Pause, all labelled</li>
+<li>More buttons when you need them: Source, Menu, Info, Exit, Channel, Rewind, Forward</li>
+<li>Your phone's volume buttons change the TV volume, and the TV's volume level is shown</li>
+<li>Shortcuts to apps installed on the TV</li>
+<li>Remote buttons in the notification bar, a Quick Settings tile and a home-screen widget</li>
+<li>Turn the TV off, and on again with Wake-on-LAN where the TV supports it</li>
+<li>Reconnects to the same TV after the router gives it a new address</li>
+</ul>
+
+<b>YouTube</b>
+<ul>
+<li>Search YouTube on the phone by typing or speaking, and play the result straight on the TV: no on-screen letter grid</li>
+<li>See what is playing, pause and seek from the phone</li>
+<li>Favourites, recent searches, Play next and Add to queue</li>
+<li>Works with TizenTube (via TizenBrew) as well as the regular YouTube TV app</li>
+</ul>
+YouTube features use YouTube's unofficial web and "Link with TV code" services. Linking is done once per phone with the 12-digit code from the TV's YouTube settings.
+
+<b>Requirements</b>
+<ul>
+<li>A compatible Samsung Tizen TV (typically 2016 or later) with its local remote service enabled</li>
+<li>Phone and TV on the same home network; guest Wi-Fi or device isolation can prevent a connection</li>
+<li>The first time, choose "Allow" on the TV with your normal remote</li>
+<li>Older TVs that need encrypted PIN pairing, including some 2016 models, are not supported yet</li>
+</ul>
+
+This is an independent app. It is not made by, affiliated with, or endorsed by Samsung Electronics or Google. Samsung, YouTube and the names of TV apps are trademarks of their owners.
