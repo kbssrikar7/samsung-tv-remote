@@ -369,7 +369,7 @@ private fun Header(state: RemoteState, actions: RemoteActions, onMore: () -> Uni
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            StatusLine(state.status, actions.retry)
+            StatusLine(state.status, choosing = state.foundTvs.isNotEmpty(), actions.retry)
         }
         CircleIconButton(Icons.Filled.MoreHoriz, "More buttons", onClick = onMore)
         Spacer(Modifier.width(10.dp))
@@ -390,9 +390,10 @@ private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: ()
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                when (state.status) {
-                    Status.ALLOW -> "Use your TV remote to choose Allow on the TV screen. You only need to pair this phone once."
-                    Status.SEARCHING, Status.CONNECTING -> state.detail ?: "Turn your TV on. Connect your phone to the same home Wi-Fi as the TV. We'll find it for you."
+                when {
+                    state.foundTvs.isNotEmpty() -> "We found a TV on your Wi-Fi. Pick yours from the list."
+                    state.status == Status.ALLOW -> "Use your TV remote to choose Allow on the TV screen. You only need to pair this phone once."
+                    state.status == Status.SEARCHING || state.status == Status.CONNECTING -> state.detail ?: "Turn your TV on. Connect your phone to the same home Wi-Fi as the TV. We'll find it for you."
                     else -> state.detail ?: "Turn your TV on and join the same home Wi-Fi. Guest Wi-Fi or a VPN may keep your phone from reaching the TV."
                 },
                 modifier = Modifier.padding(top = 6.dp),
@@ -414,8 +415,9 @@ private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: ()
 }
 
 @Composable
-private fun StatusLine(status: Status, onRetry: () -> Unit) {
-    val (color, label) = when (status) {
+private fun StatusLine(status: Status, choosing: Boolean, onRetry: () -> Unit) {
+    // While the "Which TV?" list is open, "No TV found" would contradict it.
+    val (color, label) = if (choosing) Palette.Waiting to "Choose your TV" else when (status) {
         Status.SEARCHING -> Palette.Waiting to "Looking for your TV…"
         Status.NOT_FOUND -> Palette.Power to "No TV found · tap to search"
         Status.READY -> Palette.Ready to "Connected"

@@ -10,7 +10,8 @@ needs TizenBrew for ordinary remote buttons.
 Target compatible Samsung **Tizen TVs exposing the local remote API**, typically 2016 onward.
 Do not promise every Samsung TV. Pre-Tizen televisions, hospitality/commercial restrictions,
 firmware differences, and disabled Samsung services require separate investigation. The README
-records one previously tested TV; the changes in this revision still need physical TV testing.
+records the tested TV (UA75BU8000, Tizen 6.5). This revision was tested on it on 3 November 2026
+with a Galaxy S21 (Android 15); the parents' A56 (Android 16) still needs a quick check.
 See [the compatibility audit](COMPATIBILITY.md) for all 2015–2026 Tizen generations, protocol
 exceptions, and feature-specific limits. Some early Tizen TVs require encrypted PIN pairing,
 which this app does not implement.
@@ -72,18 +73,19 @@ they check app behavior, not TV firmware.
 
 | Scenario | Required outcome | Status for this revision |
 | --- | --- | --- |
-| Fresh install, one modern TV | Discover → Allow → volume/Home works without typing | Emulator + simulated TV passed (manual address); real TV and discovery pending |
+| Fresh install, one modern TV | Discover → Allow → volume/Home works without typing | Real TV + S21 passed for both builds: found by discovery, Allow, keys, app launch |
 | Older Tizen TV with port 8001 only | Secure connection fails → plain remote succeeds | Needs device test |
 | Deny, then allow through TV device settings | No repeated prompts; explicit retry works | Emulator + simulated TV: one attempt, guidance shown, retry works; real TV pending |
 | Stored token invalidated by TV | One new pairing attempt, then usable controls | Needs device test |
 | TV off / guest Wi-Fi / VPN / isolation | Useful guidance; no indefinite pairing wait | Emulator: TV off, silent TV (45 s timeout) and auto-reconnect passed; guest Wi-Fi/VPN pending |
 | Several TVs | Choose intended TV; no state from previous TV | Needs device test |
-| Router changes the TV's address | Saved identity is rediscovered and pairing retained | Simulated; needs device test |
+| Router changes the TV's address | Saved identity is rediscovered and pairing retained | Simulated; the real TV moved from .176 to .175 and discovery found it |
 | Reopen app, rotate, switch apps rapidly | No old socket changing new connection state | Emulator: rotate and reopen passed; rapid switching pending |
 | Wi-Fi standby / deep standby | Document whether Wake-on-LAN works for that model | Needs device test |
-| Widget, notification, tile | Test with app closed and Android permission denied | Emulator passed, including a killed process and denied/blocked permission |
+| Widget, notification, tile | Test with app closed and Android permission denied | Emulator passed, including a killed process and denied/blocked permission; S21 + real TV passed with the app closed, widget also with power saving on |
 | Small screen, landscape, large font, TalkBack | Setup steps and all controls usable | Emulator (Android 8 small, Android 16): passed by scrolling; TalkBack pending |
-| Play YouTube search | Official app/browser opens; no promise of automatic casting | Emulator passed: YouTube app opens on the results |
+| Play YouTube search | Official app/browser opens; no promise of automatic casting | Emulator: YouTube app opens on the results; S21 without the app: browser opens and the sheet says so |
+| Full build YouTube link, search, play | Code links once; video plays and pauses on the TV | Real TV + S21 passed |
 
 Automatic address recovery using a saved identity and binding TV traffic to a local network are
 implemented; see [network recovery](NETWORK_RECOVERY.md). Physical router/VPN checks remain.

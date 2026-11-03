@@ -52,3 +52,7 @@ Samsung Electronics. Samsung and the names of TV apps are trademarks of their ow
 ## Content rating questionnaire
 
 Utility app, no user-generated content, no violence, no gambling: expected rating **Everyone**.
+
+**Phone screenshots** (Play build on a Galaxy S21, connected to a real Samsung TV, 3 November 2026):
+`screenshots/1-remote.png`, `2-more-buttons.png`, `3-settings.png`, `4-widget.png`. The fastlane
+screenshots show the full build's in-app YouTube search, so they are for F-Droid only.

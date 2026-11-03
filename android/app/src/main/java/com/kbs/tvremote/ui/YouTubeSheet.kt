@@ -128,6 +128,9 @@ fun YouTubeSheet(state: YouTubeState, actions: YouTubeActions, startWithVoice: B
 private fun LinkContent(state: YouTubeState, actions: YouTubeActions) {
     var code by rememberSaveable { mutableStateOf("") }
     val digits = code.filter(Char::isDigit)
+    // Open the number pad straight away; the user is reading digits off the TV.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
     Text("Connect to YouTube on the TV (one time only)", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(14.dp))
     Step(1, "On the TV, open YouTube and go to Settings → Link with TV code.")
@@ -143,7 +146,9 @@ private fun LinkContent(state: YouTubeState, actions: YouTubeActions) {
         keyboardActions = KeyboardActions(onDone = { if (digits.length == 12) actions.link(digits) }),
         shape = FieldShape,
         colors = fieldColors(),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focus),
     )
     state.error?.let { ErrorText(it) }
     Button(
