@@ -24,7 +24,7 @@ parents who just want to watch something) can use it without hunting through men
 - **Works with the app closed**: buttons in the notification bar, a Quick Settings tile and a
   home-screen widget.
 - **Finds the TV automatically** on Wi-Fi (no IP address needed), with manual entry as a fallback.
-- **No remote? setup guide**, with experimental Power/arrows/OK infrared controls on phones
+- **No remote? setup guide**, with experimental Power on/arrows/OK infrared controls on phones
   that have a supported built-in IR emitter.
 - **Recovers changed TV addresses**, matching the saved device ID or MAC instead of a TV name.
 - **Routes TV controls over Wi-Fi**, even when mobile data is the phone's default connection.

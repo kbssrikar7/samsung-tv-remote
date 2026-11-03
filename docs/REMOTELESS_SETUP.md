@@ -25,7 +25,7 @@ continues through published primary documentation and source-level implementatio
 - A **No remote?** entry in connection/setup help, including while waiting for Allow.
 - A scrollable guide covering the TV controller, qualified USB keyboard support, existing
   authorized controllers and replacement-remotes as a fallback.
-- Optional infrared setup buttons: Power, Up, Down, Left, Right and OK. They appear only when
+- Optional infrared setup buttons: Power on, Up, Down, Left, Right and OK. They appear only when
   a supported built-in emitter is detected. Normal remote buttons continue to use Wi-Fi.
 - When no wake MAC has been learned, the main Power button can use the detected IR emitter.
   Phones without supported IR get a useful TV-button/setup message instead.
@@ -37,7 +37,10 @@ continues through published primary documentation and source-level implementatio
 
 Infrared needs line of sight and actual emitter hardware. It cannot be added through software.
 The initial profile is experimental Samsung32, not a claim that every Tizen model or accessory
-understands these signals. Power is a toggle, not a verified power-state command.
+understands these signals. Power sends Samsung's discrete Power on code rather than the remote's
+on/off toggle, because the app can't tell whether a TV it isn't connected to is on. A toggle would
+turn off a TV that is on and waiting for Allow. Some models may ignore the discrete code; the
+TV's own power button is the fallback.
 
 ## Signal references and implementation
 
@@ -45,9 +48,11 @@ The implementation is new Kotlin code driven by protocol definitions, not a bund
 LIRC library. It emits a 38 kHz Samsung32 frame with a 560 microsecond unit, an 8-unit header,
 32 on-air bits and a trailing mark. The mapping uses the captured Samsung BN59-00865A profile.
 The capture's **ENTER-OK** is used for selection; its differently labelled RETURN code is not.
+Power on (`0xE0E09966`) comes from Tasmota's Samsung TV code list.
 
 - [Samsung32 timing and encoding reference](https://github.com/Arduino-IRremote/Arduino-IRremote/blob/master/src/ir_Samsung.hpp)
 - [Original remote capture and command mapping](https://github.com/probonopd/lirc-remotes/blob/master/remotes/samsung/BN59-00865A.lircd.conf)
+- [Samsung TV discrete Power on code (Tasmota IR code list)](https://tasmota.github.io/docs/Codes-for-IR-Remotes/)
 
 No service-menu codes, factory-reset sequences, token guessing, or fake network authorization
 are implemented. Approving the TV remains an explicit user action through an available control.
@@ -55,8 +60,8 @@ are implemented. Approving the TV remains an explicit user action through an ava
 ## Verification
 
 Tests exercise no emitter, unsupported carriers, unknown commands, emitter failures, transmission
-length, the 38 kHz carrier, and independent decoding of all six waveforms against the captured
-command values. Both app variants include the common helper.
+length, the 38 kHz carrier, and independent decoding of all six waveforms against the published
+command values, and that the power toggle is never sent. Both app variants include the common helper.
 
 These tests prove software behavior and waveform construction, not transmission from a physical
 phone or receipt by a TV. First-time Wi-Fi approval through IR, USB keyboard, TV controller and

@@ -33,11 +33,14 @@ class TvInfrared internal constructor(private val emitter: Emitter) {
 
     companion object {
         const val CARRIER = 38_000
+        const val KEY_POWER_ON = "KEY_POWERON"
         // On-air MSB-first codes from the Samsung BN59-00865A capture (ENTER-OK, not RETURN).
+        // Power is the discrete Power on code, not the remote's toggle: the app can't see whether
+        // the TV is on, and a toggle would turn off a TV that is on but not yet connected.
         // Protocol timings: Samsung32, 560 us unit, 8-unit header, 1/3-unit bit spaces.
         // References: docs/REMOTELESS_SETUP.md. These are signals, not vendor SDK code.
         private val codes = mapOf(
-            "KEY_POWER" to 0xE0E040BFL,
+            KEY_POWER_ON to 0xE0E09966L,
             "KEY_UP" to 0xE0E006F9L,
             "KEY_DOWN" to 0xE0E08679L,
             "KEY_LEFT" to 0xE0E0A659L,

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.kbs.tvremote.TvInfrared
 
 @Composable
 internal fun NoRemoteHelp(state: RemoteState, actions: RemoteActions, onDone: () -> Unit) {
@@ -37,11 +38,11 @@ internal fun NoRemoteHelp(state: RemoteState, actions: RemoteActions, onDone: ()
         if (state.infraredAvailable) {
             Text("Use this phone's infrared", style = MaterialTheme.typography.titleMedium)
             Text("Point the phone's IR emitter at the TV. These setup buttons send ordinary remote presses without Wi-Fi pairing. Samsung TV support is experimental.")
-            Text("Power toggles on or off. Watch the TV before pressing it again.", style = MaterialTheme.typography.bodySmall)
+            Text("Power only turns the TV on. If the TV stays off, use its own power button.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { actions.infraredKey("KEY_POWER") }) { Text("IR Power") }
+                Button(onClick = { actions.infraredKey(TvInfrared.KEY_POWER_ON) }) { Text("IR Power on") }
                 Button(onClick = { actions.infraredKey("KEY_UP") }) { Text("IR Up") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(modifier = Modifier.weight(1f), onClick = { actions.infraredKey("KEY_LEFT") }) { Text("IR Left") }

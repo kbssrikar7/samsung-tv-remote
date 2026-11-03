@@ -23,13 +23,13 @@ class TvInfraredTest {
         val emitter = FakeEmitter().apply { exists = false }
         val infrared = TvInfrared(emitter)
         assertFalse(infrared.available)
-        assertFalse(infrared.send("KEY_POWER"))
+        assertFalse(infrared.send(TvInfrared.KEY_POWER_ON))
         assertNull(emitter.sent)
     }
 
     @Test fun unsupportedCarrierAndUnknownKeyAreRejected() {
         val emitter = FakeEmitter().apply { ranges = listOf(40_000..60_000) }
-        assertFalse(TvInfrared(emitter).send("KEY_POWER"))
+        assertFalse(TvInfrared(emitter).send(TvInfrared.KEY_POWER_ON))
         emitter.ranges = listOf(30_000..50_000)
         assertFalse(TvInfrared(emitter).send("KEY_FACTORY"))
         assertNull(emitter.sent)
@@ -38,7 +38,7 @@ class TvInfraredTest {
     @Test fun sendsOneShortFrameAt38KhzAndHandlesDriverFailure() {
         val emitter = FakeEmitter()
         val infrared = TvInfrared(emitter)
-        assertTrue(infrared.send("KEY_POWER"))
+        assertTrue(infrared.send(TvInfrared.KEY_POWER_ON))
         assertEquals(38_000, emitter.carrier)
         assertTrue(emitter.sent!!.sum() < 2_000_000)
         emitter.fail = true
@@ -53,7 +53,7 @@ class TvInfraredTest {
     }
 
     @Test fun waveformMatchesCapturedSamsungCommandsIncludingOkNotReturn() {
-        val expected = mapOf("KEY_POWER" to 0xE0E040BFL, "KEY_UP" to 0xE0E006F9L,
+        val expected = mapOf(TvInfrared.KEY_POWER_ON to 0xE0E09966L, "KEY_UP" to 0xE0E006F9L,
             "KEY_DOWN" to 0xE0E08679L, "KEY_LEFT" to 0xE0E0A659L,
             "KEY_RIGHT" to 0xE0E046B9L, "KEY_ENTER" to 0xE0E016E9L)
         expected.forEach { (key, code) ->
@@ -70,5 +70,10 @@ class TvInfraredTest {
             assertEquals(key, code, decoded)
             assertEquals(560, frame.last())
         }
+    }
+
+    /** The toggle would turn off a TV that is on but not connected yet, so it is never sent. */
+    @Test fun powerToggleIsNotOffered() {
+        assertNull(TvInfrared.pattern("KEY_POWER"))
     }
 }

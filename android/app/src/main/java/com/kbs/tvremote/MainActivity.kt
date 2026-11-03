@@ -689,7 +689,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         }
         val mac = ip?.let { prefs.getString(macKey(it), null) }
         if (mac == null) {
-            if (infrared.available) sendInfrared("KEY_POWER")
+            if (infrared.available) sendInfrared(TvInfrared.KEY_POWER_ON)
             else toast("Use the TV's power button to turn it on. Tap No remote? for setup help.")
             return
         }
