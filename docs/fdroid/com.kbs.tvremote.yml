@@ -1,0 +1,29 @@
+AntiFeatures:
+  NonFreeNet:
+    en-US: YouTube search and playback use YouTube's unofficial web and TV-link services.
+Categories:
+  - Connectivity
+  - System
+License: MIT
+AuthorName: kbssrikar7
+SourceCode: https://github.com/kbssrikar7/samsung-tv-remote
+IssueTracker: https://github.com/kbssrikar7/samsung-tv-remote/issues
+Changelog: https://github.com/kbssrikar7/samsung-tv-remote/releases
+
+AutoName: TV Remote
+
+RepoType: git
+Repo: https://github.com/kbssrikar7/samsung-tv-remote.git
+
+Builds:
+  - versionName: 0.4.0
+    versionCode: 4
+    commit: v0.4.0
+    subdir: android/app
+    gradle:
+      - full
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.4.0
+CurrentVersionCode: 4
