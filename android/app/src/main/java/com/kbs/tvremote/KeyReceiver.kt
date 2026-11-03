@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import androidx.core.content.edit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -19,12 +20,19 @@ class KeyReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val key = intent.getStringExtra(EXTRA_KEY) ?: return
+        val app = context.applicationContext
         val pending = goAsync()
         Thread {
             try {
-                sendKeyOnce(context.applicationContext, key)
-            } catch (_: Exception) {
                 // A failed background button must not crash the app process.
+                val sent = runCatching { sendKeyOnce(app, key) }.getOrDefault(false)
+                if (!sent) {
+                    val saved = TvPrefs.of(app).getString(TvPrefs.IP, null)?.takeIf(TvPrefs::isValidIp) != null
+                    // Without this the button just does nothing, which looks broken.
+                    val message = if (saved) "Can't reach your TV. Open TV Remote to reconnect."
+                        else "Open TV Remote to connect your TV first."
+                    Handler(Looper.getMainLooper()).post { Toast.makeText(app, message, Toast.LENGTH_LONG).show() }
+                }
             } finally {
                 pending.finish()
             }

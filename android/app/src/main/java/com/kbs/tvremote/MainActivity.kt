@@ -1,11 +1,9 @@
 package com.kbs.tvremote
 
 import android.Manifest
-import android.app.SearchManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -22,7 +20,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
-import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.kbs.tvremote.ui.NowPlaying
 import com.kbs.tvremote.ui.NowPlayingActions
@@ -274,8 +271,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         if (enabled && !RemoteNotification.hasPermission(this)) {
             // After repeated denials Android no longer shows the prompt and the switch would do
             // nothing, so open the app's notification settings instead.
-            val blocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false) &&
+            val blocked = prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false) &&
                 !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
             prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, true) }
             if (blocked) {
@@ -419,16 +415,11 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
      * the TV itself), or the YouTube website if the app isn't installed.
      */
     private fun searchOnPhone(query: String) {
-        val app = Intent(Intent.ACTION_SEARCH)
-            .setPackage("com.google.android.youtube")
-            .putExtra(SearchManager.QUERY, query)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
-            startActivity(app)
+            startActivity(YouTubeApp.searchIntent(query))
         } catch (_: ActivityNotFoundException) {
-            val web = Intent(Intent.ACTION_VIEW, ("https://www.youtube.com/results?search_query=" + Uri.encode(query)).toUri())
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { startActivity(web) }.onFailure { toast("YouTube isn't available on this phone") }
+            runCatching { startActivity(YouTubeApp.webSearchIntent(query)) }
+                .onFailure { toast("YouTube isn't available on this phone") }
         }
     }
 

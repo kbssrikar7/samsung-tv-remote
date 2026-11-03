@@ -28,6 +28,7 @@ def log(*a):
 
 
 async def info(_):
+    log("INFO")
     return web.json_response({
         "id": "uuid:fake-tv-0001", "name": "[TV] Fake Samsung",
         "device": {"OS": "Tizen", "name": "[TV] Fake Samsung", "modelName": "UA75BU8000",

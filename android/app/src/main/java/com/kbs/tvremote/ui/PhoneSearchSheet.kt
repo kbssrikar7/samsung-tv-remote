@@ -40,11 +40,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.kbs.tvremote.YouTubeApp
 
 /**
  * Play-store search: type or speak, then the official YouTube app opens with the results. From
@@ -53,6 +55,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun PhoneSearchSheet(startWithVoice: Boolean, onSearch: (String) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    val hasApp = remember { YouTubeApp.isInstalled(context) }
     val focus = remember { FocusRequester() }
     val submit = { q: String -> if (q.isNotBlank()) onSearch(q.trim()) }
     val listen = rememberVoiceInput { spoken ->
@@ -73,7 +77,8 @@ fun PhoneSearchSheet(startWithVoice: Boolean, onSearch: (String) -> Unit) {
             Text("Search YouTube", Modifier.padding(start = 10.dp), style = MaterialTheme.typography.titleLarge)
         }
         Text(
-            "Results open in the YouTube app. Tap the cast icon there to play on the TV.",
+            if (hasApp) "Results open in the YouTube app. Tap the cast icon there to play on the TV."
+            else "Results open on the YouTube website. Install the YouTube app to play videos on the TV.",
             Modifier.padding(top = 6.dp, bottom = 16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = Palette.TextDim,
