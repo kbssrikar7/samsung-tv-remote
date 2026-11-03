@@ -67,20 +67,23 @@ your upload key, keep that key private, and enroll in Play App Signing. Never co
 Record TV model, firmware, phone model, Android version, network conditions, result, and error
 message for each run. Do not include tokens, MAC addresses, or home IPs in public bug reports.
 
+Emulator results (3 November 2026) used a local simulated TV on Android 16 and Android 8;
+they check app behavior, not TV firmware.
+
 | Scenario | Required outcome | Status for this revision |
 | --- | --- | --- |
-| Fresh install, one modern TV | Discover → Allow → volume/Home works without typing | Needs device test |
+| Fresh install, one modern TV | Discover → Allow → volume/Home works without typing | Emulator + simulated TV passed (manual address); real TV and discovery pending |
 | Older Tizen TV with port 8001 only | Secure connection fails → plain remote succeeds | Needs device test |
-| Deny, then allow through TV device settings | No repeated prompts; explicit retry works | Needs device test |
+| Deny, then allow through TV device settings | No repeated prompts; explicit retry works | Emulator + simulated TV: one attempt, guidance shown, retry works; real TV pending |
 | Stored token invalidated by TV | One new pairing attempt, then usable controls | Needs device test |
-| TV off / guest Wi-Fi / VPN / isolation | Useful guidance; no indefinite pairing wait | Needs device test |
+| TV off / guest Wi-Fi / VPN / isolation | Useful guidance; no indefinite pairing wait | Emulator: TV off, silent TV (45 s timeout) and auto-reconnect passed; guest Wi-Fi/VPN pending |
 | Several TVs | Choose intended TV; no state from previous TV | Needs device test |
 | Router changes the TV's address | Saved identity is rediscovered and pairing retained | Simulated; needs device test |
-| Reopen app, rotate, switch apps rapidly | No old socket changing new connection state | Needs device test |
+| Reopen app, rotate, switch apps rapidly | No old socket changing new connection state | Emulator: rotate and reopen passed; rapid switching pending |
 | Wi-Fi standby / deep standby | Document whether Wake-on-LAN works for that model | Needs device test |
-| Widget, notification, tile | Test with app closed and Android permission denied | Needs device test |
-| Small screen, landscape, large font, TalkBack | Setup steps and all controls usable | Needs device test |
-| Play YouTube search | Official app/browser opens; no promise of automatic casting | Needs device test |
+| Widget, notification, tile | Test with app closed and Android permission denied | Emulator passed, including a killed process and denied/blocked permission |
+| Small screen, landscape, large font, TalkBack | Setup steps and all controls usable | Emulator (Android 8 small, Android 16): passed by scrolling; TalkBack pending |
+| Play YouTube search | Official app/browser opens; no promise of automatic casting | Emulator passed: YouTube app opens on the results |
 
 Automatic address recovery using a saved identity and binding TV traffic to a local network are
 implemented; see [network recovery](NETWORK_RECOVERY.md). Physical router/VPN checks remain.
