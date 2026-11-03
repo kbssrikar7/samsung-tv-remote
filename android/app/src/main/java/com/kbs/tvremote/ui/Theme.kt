@@ -26,7 +26,7 @@ object Palette {
     val Ready = Color(0xFF32D74B)
     val Waiting = Color(0xFFFFB340)
     val YouTube = Color(0xFFFF2D2D)
-    val Hotstar = Color(0xFF4C7DFF)
+    val VideoApp = Color(0xFF4C7DFF)
 }
 
 private val scheme = darkColorScheme(

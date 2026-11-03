@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
     private val prefs by lazy { TvPrefs.of(this) }
     private val tvNetwork by lazy { TvNetwork(this) }
     private val client by lazy { TvClient(this, prefs, tvNetwork) }
+    private val infrared by lazy { TvInfrared(this) }
+    private val infraredLock = kotlinx.coroutines.sync.Mutex()
     private var networkObserver: java.io.Closeable? = null
     private var connectionJob: Job? = null
     private var recovery: Job? = null
@@ -201,6 +203,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             client.disconnect()
             connect()
         },
+        infraredKey = { sendInfrared(it) },
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -211,6 +214,7 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        uiState = uiState.copy(infraredAvailable = infrared.available)
         installedApps = ip?.let { TvApps.load(prefs, it) }.orEmpty()
         uiState = uiState.copy(
             tvName = ip?.let { prefs.getString(nameKey(it), null) } ?: uiState.tvName,
@@ -664,6 +668,20 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         }
     }
 
+    private fun sendInfrared(key: String) {
+        if (!infrared.available) {
+            toast("This phone has no supported infrared emitter. Open No remote? for other options.")
+            return
+        }
+        if (!infraredLock.tryLock()) return
+        lifecycleScope.launch {
+            try {
+                val sent = withContext(Dispatchers.IO) { infrared.send(key) }
+                if (!sent) toast("Couldn't send infrared. Check your phone's IR support.")
+            } finally { infraredLock.unlock() }
+        }
+    }
+
     private fun power() {
         if (client.state == TvClient.State.CONNECTED) {
             client.sendKey("KEY_POWER")
@@ -671,7 +689,8 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         }
         val mac = ip?.let { prefs.getString(macKey(it), null) }
         if (mac == null) {
-            toast("Can't reach the TV. Turn it on with the normal remote once.")
+            if (infrared.available) sendInfrared("KEY_POWER")
+            else toast("Use the TV's power button to turn it on. Tap No remote? for setup help.")
             return
         }
         if (!client.wake(mac)) {

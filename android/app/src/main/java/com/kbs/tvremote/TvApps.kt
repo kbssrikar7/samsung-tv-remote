@@ -11,31 +11,19 @@ import kotlinx.coroutines.ensureActive
 data class TvShortcut(val id: String, val name: String, val kind: TvApps.Kind)
 
 /**
- * Popular Tizen apps the remote offers shortcuts for. IDs vary by TV generation and region;
- * probe known alternatives and skip apps the TV reports as unavailable.
- * IDs other than YouTube, JioHotstar and TizenBrew come from community lists of Tizen app IDs.
+ * TV apps the remote offers shortcuts for: only YouTube. The GitHub build also probes TizenBrew,
+ * which is not shown as a button but opens YouTube (TizenTube) instead of the stock app.
  */
 object TvApps {
 
+    // VIDEO and MUSIC are no longer offered but stay so shortcuts saved by older versions parse.
     enum class Kind { YOUTUBE, TIZENBREW, VIDEO, MUSIC }
 
     const val YOUTUBE = "111299001912"
     const val TIZENBREW = "xvvl3S1bvH.TizenBrewStandalone"
 
-    private val CANDIDATES = listOf(
-        YOUTUBE to Kind.YOUTUBE,
-        "3201907018807" to Kind.VIDEO, // Netflix
-        "11101200001" to Kind.VIDEO, // Netflix (older TVs)
-        "3201910019365" to Kind.VIDEO, // Prime Video
-        "3201512006785" to Kind.VIDEO, // Prime Video (older TVs)
-        "3201711015117" to Kind.VIDEO, // JioHotstar
-        "3201901017640" to Kind.VIDEO, // Disney+
-        "3202009021709" to Kind.VIDEO, // Disney+ (alternative generations/regions)
-        "3202204027038" to Kind.VIDEO, // Disney+ (alternative generations/regions)
-        "3201807016597" to Kind.VIDEO, // Apple TV
-        "3201512006963" to Kind.VIDEO, // Plex
-        "3201606009684" to Kind.MUSIC, // Spotify
-    )
+    private val CANDIDATES = listOf(YOUTUBE to Kind.YOUTUBE)
+    private val KNOWN_IDS = CANDIDATES.map { it.first }.toSet() + TIZENBREW
 
     /** Blocking. Asks the TV which of the candidate apps are installed, in candidate order. */
     suspend fun detect(client: TvClient, ip: String, includeTizenBrew: Boolean): List<TvShortcut> {
@@ -51,7 +39,7 @@ object TvApps {
         (0 until array.length()).map {
             val o = array.getJSONObject(it)
             TvShortcut(o.getString("id"), o.getString("name"), Kind.valueOf(o.getString("kind")))
-        }
+        }.filter { it.id in KNOWN_IDS } // Drops shortcuts saved by versions that offered more apps.
     }.getOrDefault(emptyList())
 
     fun save(prefs: SharedPreferences, ip: String, apps: List<TvShortcut>) {

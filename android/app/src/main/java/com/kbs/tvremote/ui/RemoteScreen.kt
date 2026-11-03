@@ -94,6 +94,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -152,6 +153,7 @@ data class RemoteState(
     /** A YouTube video playing on the TV, when YouTube is linked. */
     val nowPlaying: NowPlaying? = null,
     val detail: String? = null,
+    val infraredAvailable: Boolean = false,
 )
 
 class RemoteActions(
@@ -168,11 +170,13 @@ class RemoteActions(
     val chooseTv: (TvDiscovery.FoundTv) -> Unit,
     val saveIp: (String) -> Unit,
     val forgetPairing: () -> Unit,
+    val infraredKey: (String) -> Unit = {},
 )
 
 private val CardShape = RoundedCornerShape(20.dp)
 private val TALL_LAYOUT_MIN_HEIGHT = 700.dp
 private val MAX_CONTENT_WIDTH = 560.dp
+private val MIN_DPAD_SIZE = 220.dp
 private const val REPEAT_DELAY_MS = 400L
 private const val REPEAT_INTERVAL_MS = 110L
 
@@ -184,12 +188,14 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
     var startWithVoice by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
+    var showNoRemote by rememberSaveable { mutableStateOf(false) }
 
     val openSearch = { voice: Boolean -> startWithVoice = voice; showSearch = true }
     val header: @Composable () -> Unit = {
         Column {
             Header(state, actions, onMore = { showMore = true })
-            if (state.status != Status.READY) SetupHelp(state, actions) { showSettings = true }
+            if (state.status != Status.READY) SetupHelp(state, actions,
+                onSettings = { showSettings = true }, onNoRemote = { showNoRemote = true })
         }
     }
     val searchAndApps: @Composable () -> Unit = {
@@ -233,6 +239,10 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
             val screenWidth = maxWidth
             val screenHeight = maxHeight
             val landscape = screenWidth > screenHeight
+            // Set when the tall layout leaves too little room for a usable d-pad (for example
+            // with the setup help showing); measured again whenever that content changes.
+            var padTooSmall by remember(screenHeight, state.status, state.detail, state.foundTvs,
+                state.apps, state.nowPlaying != null) { mutableStateOf(false) }
             when {
                 // Landscape (phones turned sideways, tablets): header across the top, controls
                 // on the left, d-pad on the right.
@@ -265,7 +275,7 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
                     }
                 }
                 // Tall screens: everything fits, the d-pad takes the leftover space.
-                screenHeight >= TALL_LAYOUT_MIN_HEIGHT -> Column(
+                screenHeight >= TALL_LAYOUT_MIN_HEIGHT && !padTooSmall -> Column(
                     Modifier
                         .widthIn(max = MAX_CONTENT_WIDTH)
                         .fillMaxSize()
@@ -279,6 +289,8 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center,
                     ) {
+                        val fits = maxHeight - 28.dp >= MIN_DPAD_SIZE
+                        if (!fits) SideEffect { padTooSmall = true }
                         DPad(size = min(min(maxWidth - 24.dp, maxHeight - 28.dp), 296.dp), onKey = actions.key)
                     }
                     bottom()
@@ -340,6 +352,13 @@ fun RemoteScreen(state: RemoteState, actions: RemoteActions) {
         }
     }
     if (showSettings) SettingsDialog(state, actions, onDismiss = { showSettings = false })
+    if (showNoRemote) {
+        ModalBottomSheet(
+            onDismissRequest = { showNoRemote = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Palette.Surface,
+        ) { NoRemoteHelp(state, actions) { showNoRemote = false } }
+    }
     if (state.foundTvs.isNotEmpty()) ChooseTvDialog(state.foundTvs, actions.chooseTv)
 }
 
@@ -378,7 +397,7 @@ private fun Header(state: RemoteState, actions: RemoteActions, onMore: () -> Uni
 }
 
 @Composable
-private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: () -> Unit) {
+private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: () -> Unit, onNoRemote: () -> Unit) {
     Surface(
         color = Palette.Surface,
         shape = RoundedCornerShape(16.dp),
@@ -392,7 +411,7 @@ private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: ()
             Text(
                 when {
                     state.foundTvs.isNotEmpty() -> "We found a TV on your Wi-Fi. Pick yours from the list."
-                    state.status == Status.ALLOW -> "Use your TV remote to choose Allow on the TV screen. You only need to pair this phone once."
+                    state.status == Status.ALLOW -> "Choose Allow on the TV screen. If your remote is missing, tap No remote? below."
                     state.status == Status.SEARCHING || state.status == Status.CONNECTING -> state.detail ?: "Turn your TV on. Connect your phone to the same home Wi-Fi as the TV. We'll find it for you."
                     else -> state.detail ?: "Turn your TV on and join the same home Wi-Fi. Guest Wi-Fi or a VPN may keep your phone from reaching the TV."
                 },
@@ -400,6 +419,7 @@ private fun SetupHelp(state: RemoteState, actions: RemoteActions, onSettings: ()
                 style = MaterialTheme.typography.bodyMedium,
                 color = Palette.TextDim,
             )
+            TextButton(onClick = onNoRemote) { Text("No remote?") }
             if (state.status != Status.SEARCHING && state.status != Status.CONNECTING && state.status != Status.ALLOW) {
                 Row {
                     TextButton(onClick = actions.findTv) { Text("Find my TV") }
@@ -531,7 +551,7 @@ private fun AppChip(app: TvShortcut, modifier: Modifier, onLaunch: (TvShortcut) 
     val (icon, color) = when (app.kind) {
         TvApps.Kind.YOUTUBE -> Icons.Filled.SmartDisplay to Palette.YouTube
         TvApps.Kind.MUSIC -> Icons.Filled.MusicNote to Palette.Ready
-        else -> Icons.Filled.Movie to Palette.Hotstar
+        else -> Icons.Filled.Movie to Palette.VideoApp
     }
     Surface(
         onClick = { onLaunch(app) },

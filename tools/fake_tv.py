@@ -40,11 +40,11 @@ async def info(_):
 
 async def app_status(req):
     app = req.match_info["app"]
-    installed = app in ("111299001912", "3201907018807", "3201910019365", "3201711015117", "3201606009684")
+    installed = app == "111299001912"
     log("APP_STATUS", app, installed)
     if not installed:
         return web.Response(status=404)
-    names = {"111299001912": "YouTube", "3201907018807": "Netflix", "3201910019365": "Prime Video", "3201711015117": "JioHotstar", "3201606009684": "Spotify"}
+    names = {"111299001912": "YouTube"}
     return web.json_response({"id": app, "name": names[app], "running": False, "visible": False})
 
 

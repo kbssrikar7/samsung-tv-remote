@@ -17,7 +17,7 @@ Features
 • Large arrows and OK, Back, Home, Mute, Volume and Play/Pause, all labelled
 • Shows the TV's volume level
 • Your phone's volume buttons change the TV volume
-• Shortcuts to the apps installed on your TV (YouTube, Netflix, Prime Video and more)
+• A shortcut that opens YouTube on the TV
 • Search YouTube by typing or speaking in the official phone app or browser
 • More buttons when you need them: Source, Menu, Info, Channel, Rewind, Forward
 • Remote buttons in the notification bar, a Quick Settings tile and a home-screen widget
@@ -27,7 +27,8 @@ Features
 Requirements
 • A compatible Samsung Tizen TV (typically 2016 or later) with its local remote service enabled
 • Phone and TV on the same home network; guest Wi-Fi or device isolation can prevent connection
-• The first time, choose "Allow" on the TV with your normal remote
+• The first time, choose "Allow" on the TV using an available local control
+• Missing remote? In-app guidance and experimental setup buttons on supported IR-equipped phones
 • Compatibility and power-on behavior vary by model and firmware; older non-Tizen TVs are unsupported
 • Early TVs requiring encrypted PIN pairing are not currently supported, including some 2016 models
 

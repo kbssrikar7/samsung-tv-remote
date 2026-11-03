@@ -147,7 +147,7 @@ class MainActivityTest {
         prefs.edit().clear().putString(TvPrefs.IP, "127.0.0.2")
             .putBoolean("legacy_127.0.0.1", true).commit()
         TvApps.save(prefs, "127.0.0.2", listOf(TvShortcut(TvApps.TIZENBREW, "TizenBrew", TvApps.Kind.TIZENBREW)))
-        TvApps.save(prefs, "127.0.0.1", listOf(TvShortcut("netflix", "Netflix", TvApps.Kind.VIDEO)))
+        TvApps.save(prefs, "127.0.0.1", listOf(TvShortcut(TvApps.YOUTUBE, "YouTube", TvApps.Kind.YOUTUBE)))
         val server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
@@ -167,11 +167,11 @@ class MainActivityTest {
             assertTrue(pendingDiscovery.isCancelled)
             assertEquals("127.0.0.1", prefs.getString(TvPrefs.IP, null))
             val installed = field("installedApps").get(activity) as List<*>
-            assertEquals(listOf(TvShortcut("netflix", "Netflix", TvApps.Kind.VIDEO)), installed)
+            assertEquals(listOf(TvShortcut(TvApps.YOUTUBE, "YouTube", TvApps.Kind.YOUTUBE)), installed)
             val getter = MainActivity::class.java.getDeclaredMethod("getUiState").apply { isAccessible = true }
             val state = getter.invoke(activity) as RemoteState
             assertEquals("127.0.0.1", state.ip)
-            assertEquals(listOf("Netflix"), state.apps.map { it.name })
+            assertEquals(listOf("YouTube"), state.apps.map { it.name })
         } finally {
             val getter = MainActivity::class.java.getDeclaredMethod("getClient").apply { isAccessible = true }
             (getter.invoke(activity) as TvClient).disconnect()

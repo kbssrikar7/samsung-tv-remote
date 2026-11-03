@@ -71,9 +71,8 @@ H/J/K letter: model naming patterns vary, and newer generations reuse letters.
 | YouTube in full build | Unofficial search/link plus TV app launch | Separate authorization; not evidence that Samsung remote keys work |
 | Hospitality, signage, licensed Tizen, monitors/projectors | No app-specific verification recorded | Check local API individually before claiming support |
 
-Known app ID alternatives are documented by the maintained library; Prime Video and Disney+
-alternatives were added during this audit. The app still probes availability before displaying
-shortcuts. This does not prove every region's app ID or launch behavior.
+The only app shortcut is YouTube (ID `111299001912`); the app probes it before showing the
+button. This does not prove every region's app ID or launch behavior.
 [Application ID reference](https://github.com/xchwarze/samsung-tv-ws-api/blob/master/APPLICATIONS.md).
 
 The audit also added handling for an explicit unsupported `ms.remote.control` error, so the app

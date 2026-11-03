@@ -1,0 +1,4 @@
+- No remote? The app explains how to approve the connection without the TV remote
+- Phones with an IR blaster can turn the TV on and send buttons by infrared
+- The only TV app shortcut is now YouTube
+- The D-pad no longer shrinks on short screens; the page scrolls instead

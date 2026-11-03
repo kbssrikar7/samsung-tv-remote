@@ -40,6 +40,7 @@ itself never records or stores audio; it only receives the recognised text.
 | Permission | Why |
 |---|---|
 | Internet / network | To talk to your TV on your home network |
+| Infrared transmission | Optional Power/navigation setup buttons on phones with a supported IR emitter; no network data is sent by IR |
 | Network and Wi-Fi state / multicast | To discover compatible TVs on your home network; the multicast lock is held only during discovery |
 | Notifications | To show the remote buttons in the notification bar (optional) |
 | Run at startup | To restore those notification buttons after the phone restarts |

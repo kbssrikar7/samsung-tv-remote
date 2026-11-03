@@ -24,11 +24,13 @@ parents who just want to watch something) can use it without hunting through men
 - **Works with the app closed**: buttons in the notification bar, a Quick Settings tile and a
   home-screen widget.
 - **Finds the TV automatically** on Wi-Fi (no IP address needed), with manual entry as a fallback.
+- **No remote? setup guide**, with experimental Power/arrows/OK infrared controls on phones
+  that have a supported built-in IR emitter.
 - **Recovers changed TV addresses**, matching the saved device ID or MAC instead of a TV name.
 - **Routes TV controls over Wi-Fi**, even when mobile data is the phone's default connection.
 - **Power** off over the network. Power on uses Wake-on-LAN (needs *Power On with Mobile* on the
   TV; not yet verified over Wi-Fi standby).
-- **App shortcuts** for YouTube (TizenBrew) and Hotstar.
+- **YouTube shortcut** that opens YouTube on the TV.
 - Large labelled buttons, dark calm design, no vibration.
 
 Tested on a 2022 Samsung UA75BU8000 (Tizen 6.5) with a Galaxy S9+ (Android 10).
@@ -64,7 +66,8 @@ cd android
 ## First-time setup
 
 1. Phone and TV on the same Wi-Fi. Open the app; it finds the TV by itself.
-2. The TV asks to **Allow** the new remote - accept with the normal remote (one time).
+2. The TV asks to **Allow** the new remote. Use an available local control to accept it. If your
+   remote is missing, tap **No remote?** for TV-button/keyboard guidance and optional phone IR.
 3. For YouTube search: tap **Search YouTube**, then on the TV open YouTube →
    **Settings → Link with TV code** and type the 12 numbers into the app. This is done once per
    phone (for example by whoever sets the phone up); the link is kept from then on.
@@ -118,7 +121,9 @@ TV_IP=192.168.1.50 python3 tvremote.py key KEY_VOLUP
 
 - **Same Wi-Fi.** The phone and the TV must be on the same home network for every button. Mobile
   data or another Wi-Fi won't reach the TV.
-- **First connection needs the real remote.** The TV asks once to *Allow* each new phone.
+- **First connection needs TV approval.** The physical remote is one option; suitable TV buttons,
+  a supported keyboard or the optional IR helper may work. Some TVs offer only limited local
+  controls. Approval and IR compatibility are model-specific; see [remote-free setup](docs/REMOTELESS_SETUP.md).
 - **YouTube search needs internet.** In the GitHub version it also needs the one-time *Link with
   TV code*, and results come from YouTube's unofficial web API, which YouTube can change; if search
   breaks, an app update is needed. The Play version hands searches to the YouTube app instead.
@@ -127,7 +132,7 @@ TV_IP=192.168.1.50 python3 tvremote.py key KEY_VOLUP
   a different protocol and are not supported.
 - **Early Tizen exceptions:** some TVs need encrypted PIN pairing, including certain 2016
   models. That protocol is not implemented; Tizen alone does not guarantee compatibility.
-- **Typing into other TV apps isn't supported.** Most TV apps (YouTube, Hotstar) use their own
+- **Typing into other TV apps isn't supported.** Most TV apps (such as YouTube) use their own
   on-screen letter grids, which a remote's text input can't reach.
 - **Turning the TV on** from the phone needs *Power On with Mobile* and may not work from deep
   standby over Wi-Fi. Turning it off always works.
