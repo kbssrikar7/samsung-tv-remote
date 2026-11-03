@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -808,7 +809,7 @@ private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss
         containerColor = Palette.Surface,
         title = { Text("TV settings") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 TextButton(onClick = { actions.findTv(); onDismiss() }) { Text("Find my TV automatically") }
                 TextButton(onClick = { manual = !manual }) { Text("Enter address manually (advanced)") }
                 if (manual) OutlinedTextField(
@@ -817,17 +818,28 @@ private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss
                     singleLine = true,
                     label = { Text("TV address, e.g. 192.168.1.10") },
                     isError = value.isNotEmpty() && !TvPrefs.isValidIp(value),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    // On small phones the keyboard covers the dialog's Save button, so the
+                    // keyboard's own Done key saves too.
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (TvPrefs.isValidIp(value)) { actions.saveIp(value); onDismiss() }
+                    }),
                     shape = RoundedCornerShape(14.dp),
                 )
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = 12.dp)
+                        // The whole row toggles, not just the small switch.
+                        .toggleable(
+                            value = state.notificationEnabled,
+                            role = Role.Switch,
+                            onValueChange = actions.setNotification,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Buttons in notification bar", style = MaterialTheme.typography.bodyLarge)
+                        Text("Buttons in notification bar", style = MaterialTheme.typography.bodyLarge, color = Palette.Text)
                         Text(
                             "Volume and play from the pull-down, even when the app is closed",
                             style = MaterialTheme.typography.bodyMedium,
@@ -836,7 +848,7 @@ private fun SettingsDialog(state: RemoteState, actions: RemoteActions, onDismiss
                     }
                     Switch(
                         checked = state.notificationEnabled,
-                        onCheckedChange = actions.setNotification,
+                        onCheckedChange = null,
                         colors = SwitchDefaults.colors(checkedTrackColor = Palette.Accent),
                     )
                 }

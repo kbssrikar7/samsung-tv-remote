@@ -2,6 +2,8 @@
 
 **App name** (30 max): Remote for Samsung TV
 
+Installed label on the phone: **TV Remote** (the full title is cut off under launcher icons).
+
 **Short description** (80 max):
 Big, simple remote for Samsung smart TVs. Works over your home Wi-Fi.
 

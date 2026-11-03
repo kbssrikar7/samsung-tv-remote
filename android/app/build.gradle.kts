@@ -53,7 +53,9 @@ android {
             applicationId = "com.kbs.remoteforsamsungtv"
             signingConfig = signingConfigs.findByName("upload")
             buildConfigField("boolean", "YOUTUBE_IN_APP", "false")
-            resValue("string", "app_name", "Remote for Samsung TV")
+            // The store title is "Remote for Samsung TV"; launchers and tiles truncate that, so the
+            // installed label is short.
+            resValue("string", "app_name", "TV Remote")
         }
         create("full") {
             dimension = "store"

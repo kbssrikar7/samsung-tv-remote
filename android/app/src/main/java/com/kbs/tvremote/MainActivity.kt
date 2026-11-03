@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -271,7 +272,20 @@ class MainActivity : ComponentActivity(), TvClient.Listener {
         RemoteNotification.setEnabled(this, enabled)
         // hasPermission is always true below Android 13, so this only asks where it is needed.
         if (enabled && !RemoteNotification.hasPermission(this)) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            // After repeated denials Android no longer shows the prompt and the switch would do
+            // nothing, so open the app's notification settings instead.
+            val blocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false) &&
+                !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+            prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, true) }
+            if (blocked) {
+                RemoteNotification.setEnabled(this, false)
+                toast("Turn on notifications for this app to show the buttons")
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            } else {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
         uiState = uiState.copy(notificationEnabled = RemoteNotification.isEnabled(this))
     }
