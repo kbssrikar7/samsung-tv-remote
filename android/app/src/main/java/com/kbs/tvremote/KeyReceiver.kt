@@ -12,9 +12,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Sends one remote key while the app is closed (widget and notification buttons). Each tap opens
- * a short-lived connection with the pairing token the app already holds, sends the key and closes
- * it, so nothing keeps running in the background between taps.
+ * Sends one remote key while the app is closed (notification buttons; widget taps go through
+ * [KeyService]). Each tap opens a short-lived connection with the pairing token the app already
+ * holds, sends the key and closes it, so nothing keeps running in the background between taps.
  */
 class KeyReceiver : BroadcastReceiver() {
 
@@ -24,15 +24,7 @@ class KeyReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                // A failed background button must not crash the app process.
-                val sent = runCatching { sendKeyOnce(app, key) }.getOrDefault(false)
-                if (!sent) {
-                    val saved = TvPrefs.of(app).getString(TvPrefs.IP, null)?.takeIf(TvPrefs::isValidIp) != null
-                    // Without this the button just does nothing, which looks broken.
-                    val message = if (saved) "Can't reach your TV. Open TV Remote to reconnect."
-                        else "Open TV Remote to connect your TV first."
-                    Handler(Looper.getMainLooper()).post { Toast.makeText(app, message, Toast.LENGTH_LONG).show() }
-                }
+                sendWithFeedback(app, key)
             } finally {
                 pending.finish()
             }
@@ -40,6 +32,16 @@ class KeyReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        /** Blocking: sends [key] and, if it fails, says why; a silent failure looks broken. */
+        fun sendWithFeedback(app: Context, key: String) {
+            // A failed background button must not crash the app process.
+            if (runCatching { sendKeyOnce(app, key) }.getOrDefault(false)) return
+            val saved = TvPrefs.of(app).getString(TvPrefs.IP, null)?.takeIf(TvPrefs::isValidIp) != null
+            val message = if (saved) "Can't reach your TV. Open TV Remote to reconnect."
+                else "Open TV Remote to connect your TV first."
+            Handler(Looper.getMainLooper()).post { Toast.makeText(app, message, Toast.LENGTH_LONG).show() }
+        }
+
         /** Blocking: connects with the stored pairing, sends [key], disconnects. */
         fun sendKeyOnce(context: Context, key: String): Boolean {
             val prefs = TvPrefs.of(context)

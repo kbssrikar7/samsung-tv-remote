@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <!-- The Play build's search box says whether results open in the YouTube app or the website. -->
     <queries>
@@ -35,6 +36,12 @@
         <receiver
             android:name=".KeyReceiver"
             android:exported="false" />
+
+        <!-- Widget taps; a short foreground service keeps network access in power saving mode. -->
+        <service
+            android:name=".KeyService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
 
         <receiver
             android:name=".RemoteNotification$Restorer"
